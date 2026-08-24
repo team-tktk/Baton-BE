@@ -1,0 +1,23 @@
+services:
+  db:
+    image: pgvector/pgvector:pg17   # 일반 Postgres + pgvector 확장 포함
+    container_name: baton-db
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: baton
+      POSTGRES_USER: baton
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-1234}
+      TZ: Asia/Seoul
+    volumes:
+      # 데이터만 named volume에 보관 (호스트 폴더 마운트 X)
+      # → macOS가 ~/Desktop 접근을 막아도 문제 없음
+      - baton-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U baton -d baton"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  baton-pgdata:
