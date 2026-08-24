@@ -1,0 +1,73 @@
+plugins {
+	id 'java'
+	id 'org.springframework.boot' version '4.1.1'
+	id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'com.baton'
+version = '0.0.1-SNAPSHOT'
+description = 'Baton Backend'
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(21)
+	}
+}
+
+configurations {
+	compileOnly {
+		extendsFrom annotationProcessor
+	}
+}
+
+repositories {
+	mavenCentral()
+}
+
+ext {
+	// Spring AI 2.x = Spring Boot 4.x 전용. 1.x는 Boot 3용이라 물리면 깨짐.
+	springAiVersion = '2.0.1'
+}
+
+dependencyManagement {
+	imports {
+		mavenBom "org.springframework.ai:spring-ai-bom:${springAiVersion}"
+	}
+}
+
+dependencies {
+	// 웹(REST API)
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+	// 요청 값 검증 — @Valid, @NotNull
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+
+	// DB — PostgreSQL + JPA
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+	runtimeOnly 'org.postgresql:postgresql'
+
+	// 롬복
+	compileOnly 'org.projectlombok:lombok'
+	annotationProcessor 'org.projectlombok:lombok'
+
+	// API 문서 (Swagger UI) — Boot 4는 springdoc 3.x. 2.x는 Boot 3 전용이라 물리면 깨짐.
+	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.0'
+
+	// 코드 고치면 자동 재시작
+	developmentOnly 'org.springframework.boot:spring-boot-devtools'
+
+	// ── RAG ────────────────────────────────────────────────
+	// 임베딩 모델 정하면 아래 두 줄 + application.yml의 ai 블록 주석 해제.
+	// (모델 스타터 없이 vector-store만 켜면 EmbeddingModel 빈이 없어서 기동 실패함)
+	// implementation 'org.springframework.ai:spring-ai-starter-vector-store-pgvector'
+	// implementation 'org.springframework.ai:spring-ai-starter-model-openai'
+
+	// ── 로그인/인증 붙일 때 ─────────────────────────────────
+	// implementation 'org.springframework.boot:spring-boot-starter-security'
+
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+}

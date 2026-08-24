@@ -1,0 +1,13 @@
+# 운영 프로파일. 실행: --spring.profiles.active=prod
+# Swagger는 API 구조를 통째로 노출하므로 운영에서는 반드시 끈다.
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate   # 운영에서 스키마 자동변경 금지
+    show-sql: false
