@@ -46,7 +46,7 @@ spring:
           model: text-embedding-3-small   # 1536차원
       chat:
         options:
-          model: gpt-4o-mini
+          model: gpt-5.4-nano             # 채팅 Q&A·브리핑용(빠르고 저렴). 인수인계 자료 생성은 app.ai.analysis-model 사용
           temperature: 0.3                # 근거 기반 답변이라 낮게
     vectorstore:
       pgvector:
@@ -86,6 +86,9 @@ logging:
 # 프론트 주소(CORS 허용 origin). 콤마 구분. allowedOriginPatterns라 와일드카드(*) 사용 가능.
 # 운영에선 환경변수 APP_CORS_ALLOWEDORIGINS 로 덮어쓸 수 있다.
 app:
+  ai:
+    # 인수인계 자료 생성(초안·질문·재생성) 전용 모델(품질용). 채팅·브리핑은 위 spring.ai.openai.chat 모델(gpt-5.4-nano) 사용.
+    analysis-model: gpt-5.4
   cors:
     allowed-origins: http://localhost:3000,http://localhost:5173,https://baton-fe.vercel.app,https://baton-fe-*.vercel.app,https://d1rk2gzucjdf8h.cloudfront.net
   s3:
