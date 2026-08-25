@@ -59,6 +59,10 @@ public class Handover {
 	@Column(name = "submitted_at")
 	private Instant submittedAt;
 
+	/** 인수자가 완료 처리한 시각. 완료 전이면 null. */
+	@Column(name = "completed_at")
+	private Instant completedAt;
+
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private Instant createdAt;
 
@@ -132,6 +136,21 @@ public class Handover {
 	public void markSubmitted() {
 		this.status = HandoverStatus.PENDING_REVIEW;
 		this.submittedAt = Instant.now();
+	}
+
+	public boolean isCompleted() {
+		return status == HandoverStatus.COMPLETED;
+	}
+
+	/** 완료 처리 가능한가(제출된 적이 있어야 함). */
+	public boolean isCompletable() {
+		return submittedAt != null;
+	}
+
+	/** 인수자가 인수인계를 완료 처리. */
+	public void markCompleted() {
+		this.status = HandoverStatus.COMPLETED;
+		this.completedAt = Instant.now();
 	}
 
 	/** 해당 인수자의 수신 상태를 READ로. 인수자가 아니면 아무 일도 하지 않는다(멱등). */

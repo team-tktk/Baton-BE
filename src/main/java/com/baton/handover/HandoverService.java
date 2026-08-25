@@ -145,6 +145,21 @@ public class HandoverService {
 		return HandoverResponse.of(handover, userId);
 	}
 
+	/** 인수자가 인수인계를 완료 처리(→ COMPLETED). 멱등. 제출된 적 없는 건은 409. */
+	@Transactional
+	public HandoverResponse complete(UUID handoverId, UUID userId) {
+		Handover handover = load(handoverId);
+		permission.requireRecipient(handover, userId);
+
+		if (!handover.isCompleted()) {
+			if (!handover.isCompletable()) {
+				throw new BusinessException(ErrorCode.HANDOVER_INVALID_STATE, "아직 제출되지 않아 완료할 수 없습니다.");
+			}
+			handover.markCompleted();
+		}
+		return HandoverResponse.of(handover, userId);
+	}
+
 	/** 인계자가 제출 전 초안을 삭제한다. */
 	@Transactional
 	public void delete(UUID handoverId, UUID ownerId) {
