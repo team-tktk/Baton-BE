@@ -10,6 +10,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Lob;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 
@@ -45,6 +46,11 @@ public class SourceDocument {
 	@Column(nullable = false, length = 20)
 	private SourceDocumentStatus status;
 
+	/** Tika로 추출한 원문 텍스트 전체. 벡터 검색용 청크와 별개로, 초안 생성 시 문서 전체 맥락이 필요해 보관한다. */
+	@Lob
+	@Column(name = "extracted_text")
+	private String extractedText;
+
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private Instant createdAt;
 
@@ -62,8 +68,9 @@ public class SourceDocument {
 		return new SourceDocument(handoverId, fileName, mimeType);
 	}
 
-	public void markIndexed() {
+	public void markIndexed(String extractedText) {
 		this.status = SourceDocumentStatus.INDEXED;
+		this.extractedText = extractedText;
 		this.updatedAt = Instant.now();
 	}
 
