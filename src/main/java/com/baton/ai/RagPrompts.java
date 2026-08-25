@@ -71,7 +71,7 @@ final class RagPrompts {
 			   인수자가 첫 주에 인계자에게 확인하면 좋을 것을 최소 1개는 INTERVIEW 질문으로라도 내세요. (보통 1~6개)
 
 			%s
-			""".formatted(NO_FABRICATION_RULE);
+			""".replace("%s", NO_FABRICATION_RULE);
 
 	/**
 	 * 질문 전용 생성(초안과 분리). 자료만 보고 확인 질문을 뽑는다 — 빠르게 먼저 보여주기 위함.
@@ -121,7 +121,7 @@ final class RagPrompts {
 			각 섹션은 자료(및 답변)에 근거가 있으면 채우고, 없으면 빈 값/빈 배열로 두세요.
 
 			%s
-			""".formatted(NO_FABRICATION_RULE);
+			""".replace("%s", NO_FABRICATION_RULE);
 
 	static final String BRIEFING_SYSTEM_TEMPLATE = """
 			당신은 새로 업무를 인수받는 사람에게 첫날 환영 브리핑을 써주는 어시스턴트입니다.
@@ -158,5 +158,5 @@ final class RagPrompts {
 			---------------------
 
 			%s
-			""".formatted(NO_FABRICATION_RULE);
+			""".replace("%s", NO_FABRICATION_RULE);
 }
