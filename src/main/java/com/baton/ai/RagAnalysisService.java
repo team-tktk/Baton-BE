@@ -3,24 +3,31 @@ package com.baton.ai;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.prompt.SystemPromptTemplate;
+import org.springframework.ai.openai.OpenAiChatOptions;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import com.baton.ai.dto.AccessItem;
-import com.baton.ai.dto.AnalysisResult;
 import com.baton.ai.dto.ClarificationQuestionResponse;
 import com.baton.ai.dto.ConfirmedCriterion;
+import com.baton.ai.dto.DraftPageA;
+import com.baton.ai.dto.DraftPageB;
+import com.baton.ai.dto.GeneratedQuestion;
+import com.baton.ai.dto.GeneratedQuestions;
 import com.baton.ai.dto.HandoverBriefingResponse;
 import com.baton.ai.dto.HandoverDraftContent;
 import com.baton.ai.dto.HandoverDraftResponse;
@@ -61,35 +68,39 @@ public class RagAnalysisService {
 	private final TransactionTemplate transactionTemplate;
 	private final HandoverRepository handoverRepository;
 
+	/**
+	 * 인수인계 자료 생성 전용 모델(초안·질문·재생성). 품질이 중요한 이 경로만 좋은 모델을 쓰고,
+	 * 채팅 Q&A·브리핑은 전역 chat 모델(application.yml, 더 빠르고 저렴)을 그대로 쓴다.
+	 */
+	@Value("${app.ai.analysis-model:gpt-5.4}")
+	private String analysisModel;
+
 	private static final DateTimeFormatter UPDATED_FMT =
 			DateTimeFormatter.ofPattern("yyyy. MM. dd. HH:mm", Locale.KOREA).withZone(ZoneId.of("Asia/Seoul"));
 
-	/** 외부 AI 호출은 DB 트랜잭션 밖에서 수행하고, 입력 조회와 결과 저장만 짧게 트랜잭션으로 묶는다. */
+	/**
+	 * 분석 단계 = "확인 질문"만 빠르게 생성한다(출력이 작아 빠름). 무거운 초안 생성은 답변을 받은 뒤
+	 * completeQuestions에서 페이지 병렬로 수행한다. 외부 AI 호출은 트랜잭션 밖, 저장만 짧게 트랜잭션.
+	 */
 	public AnalysisExecutionResult analyze(UUID handoverId) {
 		String combinedText = transactionTemplate.execute(status -> loadCombinedText(handoverId));
-		AnalysisResult result = generateAnalysis(combinedText);
-
-		if (result == null || result.draft() == null) {
-			throw new BusinessException(ErrorCode.INTERNAL_ERROR, "AI가 유효한 초안을 반환하지 않았습니다.");
-		}
-
-		List<com.baton.ai.dto.GeneratedQuestion> generatedQuestions =
-				result.questions() == null ? List.of() : result.questions();
+		List<GeneratedQuestion> generated = generateQuestions(combinedText);
 
 		return transactionTemplate.execute(status -> {
-			HandoverDraft draft = handoverDraftRepository.findByHandoverId(handoverId)
-					.orElseGet(() -> HandoverDraft.create(handoverId, result.draft()));
-			draft.replaceContent(result.draft());
-			handoverDraftRepository.save(draft);
-
 			clarificationQuestionRepository.deleteAllByHandoverId(handoverId);
-			List<ClarificationQuestion> questions = generatedQuestions.stream()
+			List<ClarificationQuestion> questions = new ArrayList<>(generated.stream()
 					.map(q -> ClarificationQuestion.create(
 							handoverId, q.type(), q.questionText(), q.reason(), q.evidence(), q.options()))
-					.toList();
+					.toList());
+			if (questions.isEmpty()) {
+				// 안전장치: 모델이 질문을 하나도 안 냈을 때도 항상 최소 1개는 인계자에게 확인받는다.
+				questions.add(ClarificationQuestion.create(handoverId, ClarificationQuestionType.INTERVIEW,
+						"자료에 담기지 않았지만 후임자가 꼭 알아야 할 내용이 있나요? 있다면 알려주세요.",
+						"자료만으로는 놓칠 수 있는 맥락을 인계자에게 직접 확인하기 위한 기본 질문입니다.",
+						null, List.of()));
+			}
 			clarificationQuestionRepository.saveAll(questions);
-
-			return new AnalysisExecutionResult(HandoverDraftResponse.from(draft), questions.size());
+			return new AnalysisExecutionResult(questions.size());
 		});
 	}
 
@@ -174,19 +185,20 @@ public class RagAnalysisService {
 		return ClarificationQuestionResponse.from(question);
 	}
 
-	/** 모든 질문이 답변/건너뛰기 상태인지 확인한 뒤, 답변 내용을 초안에 반영한다. */
+	/**
+	 * 모든 질문이 답변/건너뛰기 상태인지 확인한 뒤, 자료 + 답변으로 초안을 "페이지 병렬"로 생성한다.
+	 * 초안은 이 시점에 처음 만들어진다(분석 단계는 질문만 생성하므로).
+	 */
 	public HandoverDraftResponse completeQuestions(UUID handoverId) {
 		CompletionInput input = transactionTemplate.execute(status -> loadCompletionInput(handoverId));
 
-		if (!input.hasAnswers()) {
-			return transactionTemplate.execute(status -> finishQuestionsWithoutRegeneration(handoverId));
-		}
+		HandoverDraftContent content = generateDraftPaged(input.documentsText(), input.qnaText());
 
-		HandoverDraftContent updated = regenerateDraft(input.currentDraft(), input.qnaText());
 		return transactionTemplate.execute(status -> {
 			HandoverDraft draft = handoverDraftRepository.findByHandoverId(handoverId)
-					.orElseThrow(() -> new BusinessException(ErrorCode.AI_DRAFT_NOT_FOUND));
-			draft.replaceContent(updated);
+					.orElseGet(() -> HandoverDraft.create(handoverId, content));
+			draft.replaceContent(content);
+			handoverDraftRepository.save(draft);
 			loadHandover(handoverId).markQuestionsCompleted();
 			return HandoverDraftResponse.from(draft);
 		});
@@ -207,8 +219,6 @@ public class RagAnalysisService {
 	}
 
 	private CompletionInput loadCompletionInput(UUID handoverId) {
-		HandoverDraft draft = handoverDraftRepository.findByHandoverId(handoverId)
-				.orElseThrow(() -> new BusinessException(ErrorCode.AI_DRAFT_NOT_FOUND));
 		List<ClarificationQuestion> questions = clarificationQuestionRepository.findAllByHandoverId(handoverId);
 
 		boolean hasPending = questions.stream()
@@ -217,20 +227,12 @@ public class RagAnalysisService {
 			throw new BusinessException(ErrorCode.AI_QUESTIONS_INCOMPLETE);
 		}
 
-		List<ClarificationQuestion> answered = questions.stream()
+		String documentsText = loadCombinedText(handoverId);
+		String qnaText = questions.stream()
 				.filter(q -> q.getStatus() == ClarificationQuestionStatus.ANSWERED)
-				.toList();
-		String qnaText = answered.stream()
 				.map(q -> "Q: " + q.getQuestionText() + "\nA: " + q.getAnswer())
 				.collect(Collectors.joining("\n\n"));
-		return new CompletionInput(draft.getContent(), qnaText, !answered.isEmpty());
-	}
-
-	private HandoverDraftResponse finishQuestionsWithoutRegeneration(UUID handoverId) {
-		HandoverDraft draft = handoverDraftRepository.findByHandoverId(handoverId)
-				.orElseThrow(() -> new BusinessException(ErrorCode.AI_DRAFT_NOT_FOUND));
-		loadHandover(handoverId).markQuestionsCompleted();
-		return HandoverDraftResponse.from(draft);
+		return new CompletionInput(documentsText, qnaText);
 	}
 
 	private Handover loadHandover(UUID handoverId) {
@@ -238,14 +240,63 @@ public class RagAnalysisService {
 				.orElseThrow(() -> new BusinessException(ErrorCode.HANDOVER_NOT_FOUND));
 	}
 
-	private AnalysisResult generateAnalysis(String documentsText) {
-		SystemPromptTemplate template = new SystemPromptTemplate(RagPrompts.ANALYSIS_SYSTEM_TEMPLATE);
+	/** 질문만 생성(초안과 분리). 출력이 작아 빠르게 먼저 보여줄 수 있다. */
+	private List<GeneratedQuestion> generateQuestions(String documentsText) {
+		SystemPromptTemplate template = new SystemPromptTemplate(RagPrompts.QUESTIONS_SYSTEM_TEMPLATE);
 		Message systemMessage = template.createMessage(Map.of("documents", documentsText));
 
-		return chatClient.prompt()
+		GeneratedQuestions result = chatClient.prompt()
+				.options(OpenAiChatOptions.builder().model(analysisModel))
 				.messages(List.of(systemMessage))
 				.call()
-				.entity(AnalysisResult.class);
+				.entity(GeneratedQuestions.class);
+		return (result == null || result.questions() == null) ? List.of() : result.questions();
+	}
+
+	/**
+	 * 초안을 두 페이지(A: 핵심 업무, B: 사람·자원·온보딩)로 나눠 병렬 생성한 뒤 하나로 합친다.
+	 * 각 호출의 출력이 절반이라 빨라지고, 두 호출이 겹쳐 돌아 벽시계 = 더 느린 하나에 가깝다.
+	 */
+	private HandoverDraftContent generateDraftPaged(String documentsText, String qnaText) {
+		String qna = (qnaText == null || qnaText.isBlank()) ? "(답변 없음)" : qnaText;
+		CompletableFuture<DraftPageA> fa = CompletableFuture.supplyAsync(() -> generatePageA(documentsText, qna));
+		CompletableFuture<DraftPageB> fb = CompletableFuture.supplyAsync(() -> generatePageB(documentsText, qna));
+		try {
+			CompletableFuture.allOf(fa, fb).join();
+		} catch (RuntimeException e) {
+			Throwable cause = (e.getCause() != null) ? e.getCause() : e;
+			log.error("[*] Draft page generation failed", cause);
+			throw new BusinessException(ErrorCode.INTERNAL_ERROR, "AI 초안 생성 중 오류가 발생했습니다.");
+		}
+		DraftPageA a = fa.join();
+		DraftPageB b = fb.join();
+		return new HandoverDraftContent(
+				a.purpose(), a.completionCriteria(), a.ongoingTasks(), a.recurringTasks(), a.rulesAndExceptions(),
+				b.stakeholders(), b.tools(), b.schedule(), b.accessAccounts(), b.firstWeekChecklist(), b.confirmedCriteria());
+	}
+
+	private DraftPageA generatePageA(String documentsText, String qnaText) {
+		return generatePage(documentsText, qnaText,
+				"업무 개요(purpose), 완료 기준(completionCriteria), 진행 중인 업무(ongoingTasks), 반복 업무(recurringTasks), 업무 기준과 예외(rulesAndExceptions)",
+				DraftPageA.class);
+	}
+
+	private DraftPageB generatePageB(String documentsText, String qnaText) {
+		return generatePage(documentsText, qnaText,
+				"주요 관계자(stakeholders), 사용 도구와 자료(tools), 업무 일정(schedule), 접근 권한과 계정(accessAccounts), 첫 주 체크리스트(firstWeekChecklist), 확인된 업무 기준(confirmedCriteria)",
+				DraftPageB.class);
+	}
+
+	private <T> T generatePage(String documentsText, String qnaText, String sections, Class<T> type) {
+		SystemPromptTemplate template = new SystemPromptTemplate(RagPrompts.DRAFT_PAGE_SYSTEM_TEMPLATE);
+		Message systemMessage = template.createMessage(Map.of(
+				"documents", documentsText, "qna", qnaText, "sections", sections));
+
+		return chatClient.prompt()
+				.options(OpenAiChatOptions.builder().model(analysisModel))
+				.messages(List.of(systemMessage))
+				.call()
+				.entity(type);
 	}
 
 	private String generateBriefingSummary(HandoverDraftContent content) {
@@ -451,9 +502,9 @@ public class RagAnalysisService {
 		return (value == null || value.isBlank()) ? "-" : value;
 	}
 
-	public record AnalysisExecutionResult(HandoverDraftResponse draft, int questionCount) {
+	public record AnalysisExecutionResult(int questionCount) {
 	}
 
-	private record CompletionInput(HandoverDraftContent currentDraft, String qnaText, boolean hasAnswers) {
+	private record CompletionInput(String documentsText, String qnaText) {
 	}
 }

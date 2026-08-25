@@ -2,6 +2,10 @@ spring:
   application:
     name: baton
 
+  # OpenAI 호출 타임아웃은 여기가 아니라 AiConfig의 OpenAiHttpClientBuilderCustomizer 빈에서
+  # 건다 — Spring AI의 OpenAI 연동이 spring.http.client.* 를 타지 않는 별도 OkHttp 클라이언트를
+  # 쓰기 때문에, 이 표준 프로퍼티로는 실제로 타임아웃이 안 걸리는 게 라이브에서 확인됐다.
+
   # Java 21 가상 스레드 — 동시 요청 처리량 향상.
   # 혹시 이상 동작하면 false로 되돌리면 됨.
   threads:
@@ -46,7 +50,7 @@ spring:
           model: text-embedding-3-small   # 1536차원
       chat:
         options:
-          model: gpt-4o-mini
+          model: gpt-5.4-nano             # 채팅 Q&A·브리핑용(빠르고 저렴). 인수인계 자료 생성은 app.ai.analysis-model 사용
           temperature: 0.3                # 근거 기반 답변이라 낮게
     vectorstore:
       pgvector:
@@ -61,6 +65,9 @@ springdoc:
     operations-sorter: alpha
     tags-sorter: alpha
     display-request-duration: true
+    # Swagger UI가 XSRF-TOKEN 쿠키를 읽어 X-XSRF-TOKEN 헤더로 자동 첨부 → CSRF 켜진 채로 POST 테스트 가능
+    csrf:
+      enabled: true
   api-docs:
     path: /v3/api-docs
   default-produces-media-type: application/json
@@ -83,8 +90,11 @@ logging:
 # 프론트 주소(CORS 허용 origin). 콤마 구분. allowedOriginPatterns라 와일드카드(*) 사용 가능.
 # 운영에선 환경변수 APP_CORS_ALLOWEDORIGINS 로 덮어쓸 수 있다.
 app:
+  ai:
+    # 인수인계 자료 생성(초안·질문·재생성) 전용 모델(품질용). 채팅·브리핑은 위 spring.ai.openai.chat 모델(gpt-5.4-nano) 사용.
+    analysis-model: gpt-5.4
   cors:
-    allowed-origins: http://localhost:3000,http://localhost:5173,https://baton-fe.vercel.app,https://baton-fe-*.vercel.app
+    allowed-origins: http://localhost:3000,http://localhost:5173,https://baton-fe.vercel.app,https://baton-fe-*.vercel.app,https://d1rk2gzucjdf8h.cloudfront.net
   s3:
     bucket: ${S3_BUCKET}
     region: ${S3_REGION:ap-northeast-2}

@@ -82,11 +82,14 @@ public class RagController {
 
 	@Operation(summary = "인수인계 파일 업로드",
 			description = """
-					PDF/DOCX/XLSX/PPTX 등을 `multipart/form-data`로 업로드하면, 원본을 S3에 저장하고 텍스트를 추출해 벡터스토어에 인덱싱한다.
-					인계자만 가능. 파일당 최대 50MB. 응답으로 파일 id·이름·MIME·크기·처리 상태를 준다.
-					- 성공: `201 Created`(처리 상태 `UPLOADED`→비동기로 `EXTRACTING`/`INDEXED`)
+					`multipart/form-data`(파트명 `file`)로 업로드하면 원본을 S3에 저장하고 텍스트를 추출해 벡터스토어에 인덱싱한다. 인계자만 가능.
+
+					- 허용 확장자: `pdf`, `docx`, `xlsx`, `pptx`(대소문자 무시, 확장자로 판별). MIME은 저장만 하고 검증 기준은 아니다.
+					- 파일당 최대 **50MB**(초과 시 `413`). 인수인계당 파일 개수 상한은 없다.
+					- 응답 `FileUploadResponse`: `sourceDocumentId`(=파일 목록의 `id`, 근거의 `sourceId`/`fileId`와 동일)·`fileName`·`status`.
+					- 처리 상태(`status`): 업로드 직후 `EXTRACTING` → 성공 시 `INDEXED`, 실패 시 `FAILED`(재처리 가능).
 					- 지원하지 않는 형식: `400`(code=`AI_UNSUPPORTED_FILE_TYPE`)
-					- 텍스트 추출 실패: `422`(code=`AI_FILE_PARSE_FAILED`, 상태 `FAILED` → 재처리 가능)
+					- 빈 파일: `400`(code=`BAD_REQUEST`) / 텍스트 추출 실패: `422`(code=`AI_FILE_PARSE_FAILED`, 상태 `FAILED`)
 					""")
 	@PostMapping(value = "/files", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
 	@ResponseStatus(HttpStatus.CREATED)
@@ -102,7 +105,11 @@ public class RagController {
 	}
 
 	@Operation(summary = "업로드된 파일 목록 조회",
-			description = "인수인계에 첨부된 파일 메타데이터(이름·MIME·크기·처리 상태 `UPLOADED`/`EXTRACTING`/`INDEXED`/`FAILED`) 배열을 반환한다. 참여자 모두 가능.")
+			description = """
+					인수인계에 첨부된 파일 메타데이터(`FileMetadataResponse`) 배열을 반환한다. 참여자 모두 가능.
+					각 항목: `id`(=업로드 응답의 `sourceDocumentId`, 근거의 `sourceId`/`fileId`와 동일)·`fileName`·`mimeType`·`size`(바이트)·`status`·`createdAt`.
+					`status`: `EXTRACTING`(처리 중)·`INDEXED`(완료)·`FAILED`(실패).
+					""")
 	@GetMapping("/files")
 	public List<FileMetadataResponse> listFiles(@PathVariable UUID handoverId, Authentication authentication) {
 		Handover handover = loadHandover(handoverId);
@@ -115,7 +122,9 @@ public class RagController {
 
 	@Operation(summary = "업로드된 파일 원본 다운로드",
 			description = """
-					S3에 저장된 원본 파일을 스트림으로 내려준다(`Content-Disposition: attachment`). 인수자/관리자가 첨부 원문을 열 때 쓴다. 참여자 모두 가능.
+					S3에 저장된 원본 파일을 바이트로 내려준다. 인수자/관리자가 첨부 원문(또는 근거 `citations[].fileId`)을 열 때 쓴다. 참여자 모두 가능.
+					- `Content-Type`: 저장된 MIME(없으면 `application/octet-stream`).
+					- `Content-Disposition`: `attachment; filename*=UTF-8''<파일명>`(원본 파일명, UTF-8 인코딩).
 					- 없는 파일: `404`(code=`AI_SOURCE_DOCUMENT_NOT_FOUND`)
 					""")
 	@GetMapping("/files/{fileId}/download")
@@ -142,6 +151,7 @@ public class RagController {
 	@Operation(summary = "업로드된 파일 삭제",
 			description = """
 					첨부 파일을 삭제한다(S3 원본·메타데이터·벡터스토어 인덱스). 인계자만 가능. 성공: `204 No Content`.
+					- 삭제 가능 상태: `INDEXED` 또는 `FAILED`. 처리 중(`EXTRACTING`) 파일은 삭제 불가: `409`(code=`AI_SOURCE_DOCUMENT_PROCESSING`).
 					- 없는 파일: `404`(code=`AI_SOURCE_DOCUMENT_NOT_FOUND`)
 					""")
 	@DeleteMapping("/files/{fileId}")
@@ -221,12 +231,15 @@ public class RagController {
 					  "answer": "오늘 오후 3시까지 답이 없으면 물류팀에 공유하세요.",
 					  "grounded": true,
 					  "citations": [
-					    { "sourceId": "a1b2c3d4-...", "title": "문제상황_대응방법.pdf", "locator": "3쪽 > 배송 지연", "updatedAt": "2026-08-21T09:00:00Z" }
+					    { "sourceId": "a1b2c3d4-...", "title": "문제상황_대응방법.pdf", "locator": "청크 3/12", "fileId": "a1b2c3d4-...", "updatedAt": "2026-08-21T09:00:00Z" }
 					  ],
 					  "fallbackContact": null,
 					  "answeredAt": "2026-08-25T02:00:00Z"
 					}
 					```
+					`citations[].sourceId` == `fileId` == 업로드 파일(SourceDocument) id로 항상 같은 값이다.
+					원문 메타데이터는 `GET /sources/{sourceId}`, 원본 파일 다운로드는 `GET /files/{fileId}/download`로 잇는다.
+					`locator`는 문서 내 대략 위치(청크 순번). `title`은 파일명.
 					응답 예시 — 자료에서 답을 못 찾은 경우:
 					```json
 					{
@@ -287,8 +300,13 @@ public class RagController {
 
 	@Operation(summary = "AI 분석 작업 상태 조회(폴링)",
 			description = """
-					가장 최근 분석 작업의 상태·진행률·현재 단계를 조회한다. 분석 화면에서 주기적으로 폴링한다. 인계자만 가능.
-					작업 상태: `QUEUED`/`PARSING`/`INDEXING`/`GENERATING_QUESTIONS`/`GENERATING_DRAFT`/`COMPLETED`/`FAILED`.
+					가장 최근 분석 작업의 상태·진행률·현재 단계를 조회한다. **권장 폴링 주기 2~3초.** 인계자만 가능.
+
+					응답 `AnalysisJobResponse`: `jobId`·`status`·`progress`(0~100 정수)·`currentStep`(사람이 읽는 현재 단계 문구)·`error`(실패 시 사유, 아니면 null)·`updatedAt`.
+					- 진행 중: `QUEUED`·`PARSING`·`INDEXING`·`GENERATING_QUESTIONS`·`GENERATING_DRAFT`
+					- **완료 상태**: `COMPLETED` — 폴링 종료. 확인 질문이 있으면 `GET /questions`가 채워지고(본 상태 `ANSWERING`),
+					  없으면 빈 배열(본 상태 `EDITING`)이니 바로 `GET /document`로 초안을 조회하면 된다.
+					- **실패 상태**: `FAILED` — `error`에 사유. `POST /analysis/retry`로만 재시도 가능(재시도 가능한 유일한 실패).
 					- 작업 없음: `404`(code=`AI_ANALYSIS_JOB_NOT_FOUND`)
 					""")
 	@GetMapping("/analysis")
@@ -399,6 +417,8 @@ public class RagController {
 			description = """
 					AI가 초안 보완을 위해 만든 확인 질문(질문·설명·선택지·근거)을 반환한다. 인계자만 가능.
 					`type=INTERVIEW`(추가 정보 인터뷰) 또는 `type=CONFLICT`(문서 간 충돌 해소)로 필터할 수 있다.
+					각 항목의 `status`: `PENDING`(미응답)·`ANSWERED`(답변)·`SKIPPED`(건너뜀).
+					**질문이 0개면 빈 배열**을 반환한다 — 이땐 답변 단계를 건너뛰고 바로 `GET /document`로 초안을 조회하면 된다.
 					""")
 	@GetMapping("/questions")
 	public List<ClarificationQuestionResponse> getQuestions(
@@ -414,9 +434,12 @@ public class RagController {
 
 	@Operation(summary = "AI 확인 질문에 답변",
 			description = """
-					선택지 선택 또는 직접 입력으로 답변을 저장/수정하거나 건너뛴다(`skipped=true`). 인계자만 가능.
-					`skipped=false`면 `answer`가 반드시 있어야 하고, `skipped=true`면 `answer`를 보내면 안 된다.
-					- 답변과 건너뛰기 중 하나는 있어야 함: `400`(code=`AI_QUESTION_ANSWER_INVALID`)
+					선택지 선택 또는 직접 입력으로 답변을 저장/수정하거나 건너뛴다. 인계자만 가능. 답변하면 `status=ANSWERED`, 건너뛰면 `SKIPPED`.
+
+					요청 규칙(`validCombination` 검증):
+					- **답변**: `skipped=false` + `answer`에 내용(공백만은 불가).
+					- **건너뛰기**: `skipped=true`만 보내면 된다. `answer`는 보내지 않거나 `null`. **빈 문자열("")도 보내지 말 것** — 건너뛸 때 `answer`가 있으면 검증 실패.
+					- 규칙 위반(둘 다 없음/둘 다 있음): `400`(code=`AI_QUESTION_ANSWER_INVALID` 또는 검증 `VALIDATION_FAILED`).
 					- 없는 질문: `404`(code=`AI_QUESTION_NOT_FOUND`)
 
 					요청 예시 — 답변:
@@ -442,8 +465,11 @@ public class RagController {
 
 	@Operation(summary = "확인 질문 완료 처리",
 			description = """
-					답변(및 건너뛴 항목)을 반영해 초안을 다시 생성하고 최신 문서를 반환한다. 인계자만 가능.
-					- 답하지 않은(건너뛰지도 않은) 질문이 남아 있음: `409`(code=`AI_QUESTIONS_INCOMPLETE`)
+					답변(및 건너뛴 항목)을 반영해 초안을 다시 생성하고 최신 문서를 반환한다(본 상태 → `EDITING`). 인계자만 가능.
+
+					**모든 질문에 답할 필요는 없다** — 답하지 않을 질문은 건너뛰기(`SKIPPED`)만 해두면 된다. 즉 `PENDING`이 하나도 없으면 호출 가능.
+					답변이 하나도 없고 전부 건너뛰었거나 **질문이 0개면** 초안 재생성 없이 그대로 완료 처리한다.
+					- 아직 `PENDING`(답변·건너뛰기 안 한) 질문이 남아 있음: `409`(code=`AI_QUESTIONS_INCOMPLETE`)
 					""")
 	@PostMapping("/questions/complete")
 	public HandoverDraftResponse completeQuestions(@PathVariable UUID handoverId, Authentication authentication) {

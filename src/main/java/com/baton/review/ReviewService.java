@@ -1,6 +1,8 @@
 package com.baton.review;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
@@ -10,6 +12,7 @@ import com.baton.ai.RagAnalysisService;
 import com.baton.ai.RagIngestService;
 import com.baton.ai.dto.FileMetadataResponse;
 import com.baton.auth.User;
+import com.baton.auth.UserDirectory;
 import com.baton.auth.UserRepository;
 import com.baton.common.BusinessException;
 import com.baton.common.ErrorCode;
@@ -38,6 +41,7 @@ public class ReviewService {
 	private final ReviewChecklistItemRepository checklistItemRepository;
 	private final ReviewCommentRepository commentRepository;
 	private final UserRepository userRepository;
+	private final UserDirectory userDirectory;
 	private final RagAnalysisService ragAnalysisService;
 	private final RagIngestService ragIngestService;
 
@@ -129,7 +133,7 @@ public class ReviewService {
 		if (reason != null && !reason.isBlank()) {
 			commentRepository.save(ReviewComment.create(handoverId, reviewerId, reason));
 		}
-		return HandoverResponse.of(handover, reviewerId);
+		return toResponse(handover, reviewerId);
 	}
 
 	/** 관리자가 최종 승인한다(→ APPROVED). 체크리스트를 모두 완료해야 승인할 수 있다. */
@@ -141,7 +145,15 @@ public class ReviewService {
 		requireChecklistComplete(handoverId);
 
 		handover.markApproved();
-		return HandoverResponse.of(handover, reviewerId);
+		return toResponse(handover, reviewerId);
+	}
+
+	/** 상세 응답 조립 — owner + 참여자를 배치 요약으로 담는다(HandoverService와 동일 방식). */
+	private HandoverResponse toResponse(Handover handover, UUID viewerId) {
+		Set<UUID> userIds = new HashSet<>();
+		userIds.add(handover.getOwnerId());
+		handover.getParticipants().forEach(p -> userIds.add(p.getUserId()));
+		return HandoverResponse.of(handover, viewerId, userDirectory.summarize(userIds));
 	}
 
 	private void requirePendingReview(Handover handover) {

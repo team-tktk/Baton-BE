@@ -34,7 +34,7 @@ import lombok.RequiredArgsConstructor;
  * 관리자(REVIEWER) 검토: 체크리스트, 코멘트, 보완요청/승인.
  * 세션 인증(이메일) → User.id 해석은 다른 컨트롤러와 같은 방식.
  */
-@Tag(name = "06. 관리자 검토", description = "관리자(reviewer)의 검토 상세·체크리스트·코멘트·보완요청·최종 승인.")
+@Tag(name = "05. 관리자 검토", description = "관리자(reviewer)의 검토 상세·체크리스트·코멘트·보완요청·최종 승인.")
 @RestController
 @RequestMapping("/api/v1/handovers/{handoverId}")
 @RequiredArgsConstructor
@@ -113,7 +113,11 @@ public class ReviewController {
 	@Operation(summary = "인계자에게 보완 요청",
 			description = """
 					검토 후 인계자에게 수정을 요청한다(`PENDING_REVIEW` → `REVISION_REQUESTED`). 관리자만 가능.
-					`reason`을 보내면 코멘트로도 기록한다(선택).
+
+					**`reason`(보완 사유)은 선택값이다.** 요청 바디 자체도 생략 가능:
+					- `reason`을 보내면 보완 사유를 **코멘트로 함께 기록**한다(코멘트 목록에 남아 인계자가 확인).
+					- 생략하면 상태만 전이하고 별도 코멘트는 남기지 않는다. 기존에 남긴 코멘트를 사유로 쓰는 흐름이면 `reason` 없이 호출하면 된다.
+					- 항상 사유를 남기게 하려면 프론트에서 `reason`을 필수로 받아 전달하는 방식을 권장(서버는 강제하지 않음).
 					- 검토 대기 상태가 아니면: `409`(code=`HANDOVER_INVALID_STATE`)
 					""")
 	@PostMapping("/request-revision")
