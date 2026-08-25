@@ -54,7 +54,7 @@ public class RagQueryService {
 		List<Document> matches = search(handoverId, question);
 
 		if (matches.isEmpty()) {
-			return persistNotFound(handoverId, askedBy, question);
+			return fallbackToGeneralKnowledge(handoverId, askedBy, question);
 		}
 
 		String context = matches.stream()
@@ -64,7 +64,7 @@ public class RagQueryService {
 		String answer = generateAnswer(context, question);
 
 		if (answer == null || answer.isBlank() || answer.contains(NOT_FOUND_MARKER)) {
-			return persistNotFound(handoverId, askedBy, question);
+			return fallbackToGeneralKnowledge(handoverId, askedBy, question);
 		}
 
 		ChatMessage saved = chatMessageRepository.save(ChatMessage.create(
@@ -99,6 +99,34 @@ public class RagQueryService {
 		ChatMessage saved = chatMessageRepository.save(ChatMessage.create(
 				handoverId, askedBy, question, null, false, List.of()));
 		return ChatAnswerResponse.from(saved);
+	}
+
+	/**
+	 * 문서 근거로 답을 못 찾았을 때 바로 "모른다"로 끝내지 않고, 일반 지식으로 답할 수 있는지,
+	 * 되물어야 할 만큼 애매한 질문인지, 아니면 팀장님/인계자에게 직접 물어보라고 안내해야 하는지
+	 * AI가 판단해서 답하게 한다. persistNotFound는 이 판단 호출 자체가 실패했을 때만 쓰는 최후 수단이다.
+	 */
+	private ChatAnswerResponse fallbackToGeneralKnowledge(UUID handoverId, UUID askedBy, String question) {
+		String answer = generateGeneralKnowledgeAnswer(question);
+
+		if (answer == null || answer.isBlank()) {
+			return persistNotFound(handoverId, askedBy, question);
+		}
+
+		ChatMessage saved = chatMessageRepository.save(ChatMessage.create(
+				handoverId, askedBy, question, answer.trim(), false, List.of()));
+		return ChatAnswerResponse.from(saved);
+	}
+
+	private String generateGeneralKnowledgeAnswer(String question) {
+		SystemPromptTemplate systemPromptTemplate = new SystemPromptTemplate(RagPrompts.GENERAL_KNOWLEDGE_SYSTEM_TEMPLATE);
+		Message systemMessage = systemPromptTemplate.createMessage(Map.of());
+		Message userMessage = new UserMessage(question);
+
+		return chatClient.prompt()
+				.messages(List.of(systemMessage, userMessage))
+				.call()
+				.content();
 	}
 
 	private List<Document> search(UUID handoverId, String question) {
