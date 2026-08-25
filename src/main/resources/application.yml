@@ -2,14 +2,9 @@ spring:
   application:
     name: baton
 
-  # OpenAI 등 외부 API 호출에 쓰는 기본 HTTP 클라이언트(RestClient/WebClient) 타임아웃.
-  # 지금까지 이게 없어서, OpenAI 응답이 멈추면 스레드가 무기한 붙잡혀 분석이 영원히
-  # "진행 중"으로 남는 문제가 있었다. 문서가 크면 응답이 오래 걸릴 수 있어 read-timeout은
-  # 넉넉하게 잡되, 어쨌든 끝은 나도록 상한을 둔다.
-  http:
-    client:
-      connect-timeout: 10s
-      read-timeout: 90s
+  # OpenAI 호출 타임아웃은 여기가 아니라 AiConfig의 OpenAiHttpClientBuilderCustomizer 빈에서
+  # 건다 — Spring AI의 OpenAI 연동이 spring.http.client.* 를 타지 않는 별도 OkHttp 클라이언트를
+  # 쓰기 때문에, 이 표준 프로퍼티로는 실제로 타임아웃이 안 걸리는 게 라이브에서 확인됐다.
 
   # Java 21 가상 스레드 — 동시 요청 처리량 향상.
   # 혹시 이상 동작하면 false로 되돌리면 됨.
