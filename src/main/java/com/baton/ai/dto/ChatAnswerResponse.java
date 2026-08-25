@@ -4,6 +4,8 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import com.baton.ai.ChatMessage;
+
 public record ChatAnswerResponse(
 		UUID messageId,
 		String answer,
@@ -12,23 +14,16 @@ public record ChatAnswerResponse(
 		String fallbackContact,
 		Instant answeredAt) {
 
-	public static ChatAnswerResponse notFound() {
-		return new ChatAnswerResponse(
-				UUID.randomUUID(),
-				null,
-				false,
-				List.of(),
-				"업로드된 문서에서 답을 찾지 못했습니다. 인계자에게 직접 문의해주세요.",
-				Instant.now());
-	}
+	private static final String FALLBACK_CONTACT = "업로드된 문서에서 답을 찾지 못했습니다. 인계자에게 직접 문의해주세요.";
 
-	public static ChatAnswerResponse of(String answer, List<Citation> citations) {
+	/** 실제로 저장된 ChatMessage 기준으로 응답을 만든다 — 응답의 messageId가 이력 조회 결과와 항상 같은 값이 되도록. */
+	public static ChatAnswerResponse from(ChatMessage message) {
 		return new ChatAnswerResponse(
-				UUID.randomUUID(),
-				answer,
-				true,
-				citations,
-				null,
-				Instant.now());
+				message.getId(),
+				message.getAnswer(),
+				message.isGrounded(),
+				message.getCitations(),
+				message.isGrounded() ? null : FALLBACK_CONTACT,
+				message.getCreatedAt());
 	}
 }

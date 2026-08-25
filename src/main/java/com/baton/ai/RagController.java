@@ -1,6 +1,7 @@
 package com.baton.ai;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -25,6 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.baton.ai.dto.ChatAnswerResponse;
+import com.baton.ai.dto.ChatMessagePageResponse;
 import com.baton.ai.dto.ChatQuestionRequest;
 import com.baton.ai.dto.AnalysisJobResponse;
 import com.baton.ai.dto.ClarificationQuestionResponse;
@@ -32,6 +34,7 @@ import com.baton.ai.dto.DownloadedFile;
 import com.baton.ai.dto.FileMetadataResponse;
 import com.baton.ai.dto.FileUploadResponse;
 import com.baton.ai.dto.ChatMessageResponse;
+import com.baton.ai.dto.HandoverBriefingResponse;
 import com.baton.ai.dto.HandoverDraftResponse;
 import com.baton.ai.dto.QuestionAnswerRequest;
 import com.baton.ai.dto.UpdateDraftRequest;
@@ -234,13 +237,21 @@ public class RagController {
 	}
 
 	@Operation(summary = "AI 대화 이력 조회",
-			description = "인수인계별 사용자/AI 메시지와 인용 근거를 시간순으로 반환한다. 참여자 모두 가능.")
+			description = "인수인계별 사용자/AI 메시지와 인용 근거를 시간순으로 반환한다. 참여자 모두 가능. "
+					+ "커서 페이지네이션: cursor는 직전 응답의 nextCursor(ISO-8601)를 그대로 전달, size 기본 20.")
 	@GetMapping("/chat/messages")
-	public List<ChatMessageResponse> listMessages(@PathVariable UUID handoverId, Authentication authentication) {
+	public ChatMessagePageResponse listMessages(
+			@PathVariable UUID handoverId,
+			@Parameter(description = "직전 응답의 nextCursor(ISO-8601 시각). 첫 페이지는 생략.")
+			@RequestParam(required = false) String cursor,
+			@Parameter(description = "페이지 크기(기본 20).")
+			@RequestParam(required = false, defaultValue = "20") int size,
+			Authentication authentication) {
 		Handover handover = loadHandover(handoverId);
 		handoverPermission.requireViewer(handover, currentUserId(authentication));
 
-		return ragQueryService.listMessages(handoverId);
+		Instant cursorInstant = (cursor == null || cursor.isBlank()) ? null : Instant.parse(cursor);
+		return ragQueryService.listMessages(handoverId, cursorInstant, size);
 	}
 
 	@Operation(summary = "AI 분석·초안 생성 시작",
@@ -340,15 +351,15 @@ public class RagController {
 
 	@Operation(summary = "인수자 첫날 요약(브리핑)",
 			description = """
-					인수자 첫날 요약 화면용 데이터를 제공한다. 참여자 모두 가능.
-					(현재는 `GET /document`와 같은 초안 내용을 그대로 반환한다 — 인수자 관점 재구성은 후속 개선 대상.)
+					AI가 초안을 바탕으로 쓴 환영 브리핑과, 당장 필요한 항목(첫 주 체크리스트·접근권한·주요 관계자)만 추려서 제공한다. 참여자 모두 가능.
+					브리핑 문장은 초안이 바뀌기 전까지 캐시해 재사용한다.
 					""")
 	@GetMapping("/briefing")
-	public HandoverDraftResponse getBriefing(@PathVariable UUID handoverId, Authentication authentication) {
+	public HandoverBriefingResponse getBriefing(@PathVariable UUID handoverId, Authentication authentication) {
 		Handover handover = loadHandover(handoverId);
 		handoverPermission.requireViewer(handover, currentUserId(authentication));
 
-		return ragAnalysisService.getDraft(handoverId);
+		return ragAnalysisService.getBriefing(handoverId);
 	}
 
 	@Operation(summary = "인수인계 문서 Markdown 내보내기",

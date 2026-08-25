@@ -42,6 +42,7 @@ public enum ErrorCode {
 	AI_DRAFT_NOT_FOUND(HttpStatus.NOT_FOUND, "생성된 인수인계 초안이 없습니다"),
 	AI_QUESTION_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 질문입니다"),
 	AI_QUESTION_ANSWER_INVALID(HttpStatus.BAD_REQUEST, "답변하거나 건너뛰기 중 하나를 선택해야 합니다"),
+	AI_SOURCE_DOCUMENT_PROCESSING(HttpStatus.CONFLICT, "처리 중인 파일은 삭제할 수 없습니다"),
 	AI_QUESTIONS_INCOMPLETE(HttpStatus.CONFLICT, "답변하지 않은 확인 질문이 있습니다"),
 	AI_ANALYSIS_JOB_NOT_FOUND(HttpStatus.NOT_FOUND, "분석 작업을 찾을 수 없습니다"),
 	AI_ANALYSIS_ALREADY_RUNNING(HttpStatus.CONFLICT, "이미 분석 작업이 진행 중입니다"),

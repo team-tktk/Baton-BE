@@ -1,6 +1,7 @@
 package com.baton.ai;
 
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -17,6 +18,7 @@ import com.baton.ai.dto.DownloadedFile;
 import com.baton.common.BusinessException;
 import com.baton.common.ErrorCode;
 
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -33,11 +35,15 @@ public class RagIngestService {
 	private static final String META_FILE_NAME = "fileName";
 	private static final String META_CHUNK_INDEX = "chunkIndex";
 
+	/** 프론트/기획서에서 안내하는 지원 형식(PDF, DOCX, XLSX, PPTX)만 받는다. */
+	private static final Set<String> ALLOWED_EXTENSIONS = Set.of("pdf", "docx", "xlsx", "pptx");
+
 	private final SourceDocumentRepository sourceDocumentRepository;
 	private final SourceDocumentPersistence sourceDocumentPersistence;
 	private final VectorStore vectorStore;
 	private final TokenTextSplitter tokenTextSplitter;
 	private final S3FileStorage s3FileStorage;
+	private final EntityManager entityManager;
 
 	/**
 	 * RagController 클래스 전체에 @Transactional이 걸려있어서(권한 체크의 지연로딩 때문), 여기서
@@ -49,6 +55,7 @@ public class RagIngestService {
 		if (file == null || file.isEmpty()) {
 			throw new BusinessException(ErrorCode.BAD_REQUEST, "빈 파일은 업로드할 수 없습니다.");
 		}
+		validateExtension(file.getOriginalFilename());
 
 		byte[] fileBytes;
 		try {
@@ -63,7 +70,7 @@ public class RagIngestService {
 				handoverId, file.getOriginalFilename(), file.getContentType(), file.getSize(), s3Key);
 
 		runPipeline(handoverId, sourceDocument, fileBytes);
-		return sourceDocument;
+		return refreshed(sourceDocument);
 	}
 
 	/** 추출/임베딩 실패한 파일을 S3에 저장된 원본으로 다시 처리한다. */
@@ -75,7 +82,40 @@ public class RagIngestService {
 
 		byte[] fileBytes = s3FileStorage.download(sourceDocument.getS3Key());
 		runPipeline(handoverId, sourceDocument, fileBytes);
-		return sourceDocument;
+		return refreshed(sourceDocument);
+	}
+
+	/**
+	 * createInitial/markIndexed는 REQUIRES_NEW(별도 트랜잭션·별도 영속성 컨텍스트)로 커밋된다.
+	 * ingest()가 들고 있는 sourceDocument는 그 커밋을 반영 못한 detached 인스턴스이고,
+	 * retry()가 들고 있는 sourceDocument는 findOwned()로 이미 현재 영속성 컨텍스트에 managed로 붙어있어
+	 * 그냥 다시 findById해도 1차 캐시가 같은(오래된) 인스턴스를 그대로 돌려준다.
+	 * 두 경우 다 detach로 캐시에서 떼어낸 뒤 다시 조회해야 DB의 진짜 최종 상태를 읽어온다.
+	 * (실패 시엔 runPipeline이 예외를 던져 이 지점에 도달하지 않는다.)
+	 */
+	private SourceDocument refreshed(SourceDocument sourceDocument) {
+		entityManager.detach(sourceDocument);
+		return sourceDocumentRepository.findById(sourceDocument.getId())
+				.orElseThrow(() -> new BusinessException(ErrorCode.AI_SOURCE_DOCUMENT_NOT_FOUND));
+	}
+
+	private void validateExtension(String fileName) {
+		String extension = extensionOf(fileName);
+		if (extension == null || !ALLOWED_EXTENSIONS.contains(extension)) {
+			throw new BusinessException(ErrorCode.AI_UNSUPPORTED_FILE_TYPE,
+					"PDF, DOCX, XLSX, PPTX 파일만 업로드할 수 있습니다.");
+		}
+	}
+
+	private String extensionOf(String fileName) {
+		if (fileName == null) {
+			return null;
+		}
+		int dot = fileName.lastIndexOf('.');
+		if (dot < 0 || dot == fileName.length() - 1) {
+			return null;
+		}
+		return fileName.substring(dot + 1).toLowerCase();
 	}
 
 	private void runPipeline(UUID handoverId, SourceDocument sourceDocument, byte[] fileBytes) {
@@ -89,7 +129,8 @@ public class RagIngestService {
 			attachMetadata(chunks, handoverId, sourceDocument);
 
 			vectorStore.add(chunks);
-			sourceDocumentPersistence.markIndexed(sourceDocument.getId(), extractedText);
+			List<String> chunkIds = chunks.stream().map(Document::getId).toList();
+			sourceDocumentPersistence.markIndexed(sourceDocument.getId(), extractedText, chunkIds);
 		} catch (BusinessException e) {
 			sourceDocumentPersistence.markFailed(sourceDocument.getId());
 			throw e;
@@ -151,6 +192,13 @@ public class RagIngestService {
 	@Transactional
 	public void delete(UUID handoverId, UUID fileId) {
 		SourceDocument sourceDocument = findOwned(handoverId, fileId);
+		if (sourceDocument.getStatus() == SourceDocumentStatus.EXTRACTING) {
+			throw new BusinessException(ErrorCode.AI_SOURCE_DOCUMENT_PROCESSING);
+		}
+
+		if (sourceDocument.getChunkIds() != null && !sourceDocument.getChunkIds().isEmpty()) {
+			vectorStore.delete(sourceDocument.getChunkIds());
+		}
 		s3FileStorage.delete(sourceDocument.getS3Key());
 		sourceDocumentRepository.delete(sourceDocument);
 	}

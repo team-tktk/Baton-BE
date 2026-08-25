@@ -20,6 +20,7 @@ import com.baton.ai.dto.AccessItem;
 import com.baton.ai.dto.AnalysisResult;
 import com.baton.ai.dto.ClarificationQuestionResponse;
 import com.baton.ai.dto.ConfirmedCriterion;
+import com.baton.ai.dto.HandoverBriefingResponse;
 import com.baton.ai.dto.HandoverDraftContent;
 import com.baton.ai.dto.HandoverDraftResponse;
 import com.baton.ai.dto.QuestionAnswerRequest;
@@ -104,6 +105,22 @@ public class RagAnalysisService {
 		return handoverDraftRepository.findByHandoverId(handoverId)
 				.map(HandoverDraftResponse::from)
 				.orElse(null);
+	}
+
+	/**
+	 * 인수자용 첫날 요약. 초안 전체가 아니라 당장 필요한 필드만 추려서 반환하고,
+	 * AI가 쓴 환영 브리핑 문장을 곁들인다. 브리핑 문장은 초안이 바뀌기 전까지 재사용한다.
+	 */
+	@Transactional
+	public HandoverBriefingResponse getBriefing(UUID handoverId) {
+		HandoverDraft draft = handoverDraftRepository.findByHandoverId(handoverId)
+				.orElseThrow(() -> new BusinessException(ErrorCode.AI_DRAFT_NOT_FOUND));
+
+		if (draft.getBriefingSummary() == null) {
+			draft.cacheBriefingSummary(generateBriefingSummary(draft.getContent()));
+		}
+
+		return HandoverBriefingResponse.from(draft);
 	}
 
 	/** 사람이 초안을 직접 수정한다(자동저장). 필드 단위가 아니라 content 전체를 교체한다. */
@@ -212,6 +229,16 @@ public class RagAnalysisService {
 				.messages(List.of(systemMessage))
 				.call()
 				.entity(AnalysisResult.class);
+	}
+
+	private String generateBriefingSummary(HandoverDraftContent content) {
+		SystemPromptTemplate template = new SystemPromptTemplate(RagPrompts.BRIEFING_SYSTEM_TEMPLATE);
+		Message systemMessage = template.createMessage(Map.of("draft", writeJson(content)));
+
+		return chatClient.prompt()
+				.messages(List.of(systemMessage))
+				.call()
+				.content();
 	}
 
 	private HandoverDraftContent regenerateDraft(HandoverDraftContent currentDraft, String qnaText) {
