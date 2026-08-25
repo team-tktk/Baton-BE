@@ -11,3 +11,15 @@ spring:
     hibernate:
       ddl-auto: validate   # 운영에서 스키마 자동변경 금지
     show-sql: false
+
+  # 운영에선 세션 스키마를 자동 생성하지 않는다(마이그레이션으로 관리). 최초 배포 전 SPRING_SESSION 테이블 생성 필요.
+  session:
+    jdbc:
+      initialize-schema: never
+
+server:
+  servlet:
+    session:
+      cookie:
+        secure: true   # HTTPS 연결에서만 쿠키 전송
+
