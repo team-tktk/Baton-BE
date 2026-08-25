@@ -42,19 +42,28 @@ public class User {
 	@Column(nullable = false)
 	private String team;
 
+	/**
+	 * 직책(예: "팀장", "과장"). 인수인계 승인자 지정 시 적임자를 식별하기 위한 표시용 속성.
+	 * 권한 자체는 아니며(전역 역할 X), 승인 권한은 handover별 REVIEWER 관계로 판단한다.
+	 * 컬럼명은 예약어 회피를 위해 job_title. 기존 행 호환을 위해 nullable.
+	 */
+	@Column(name = "job_title")
+	private String position;
+
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private Instant createdAt;
 
-	private User(String email, String passwordHash, String name, String team) {
+	private User(String email, String passwordHash, String name, String team, String position) {
 		this.email = email;
 		this.passwordHash = passwordHash;
 		this.name = name;
 		this.team = team;
+		this.position = position;
 	}
 
 	/** 새 회원 생성. passwordHash는 반드시 해시된 값이어야 한다(평문 금지). */
-	public static User create(String email, String passwordHash, String name, String team) {
-		return new User(email, passwordHash, name, team);
+	public static User create(String email, String passwordHash, String name, String team, String position) {
+		return new User(email, passwordHash, name, team, position);
 	}
 
 	@PrePersist
