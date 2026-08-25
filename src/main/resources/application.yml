@@ -84,3 +84,6 @@ logging:
 app:
   cors:
     allowed-origins: http://localhost:3000,http://localhost:5173
+  s3:
+    bucket: ${S3_BUCKET}
+    region: ${S3_REGION:ap-northeast-2}

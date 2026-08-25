@@ -42,6 +42,13 @@ public class SourceDocument {
 	@Column(name = "mime_type")
 	private String mimeType;
 
+	@Column(name = "file_size", nullable = false)
+	private long fileSize;
+
+	/** S3에 저장된 원본 파일의 오브젝트 키. 다운로드 시 이 키로 S3에서 꺼내온다. */
+	@Column(name = "s3_key", nullable = false)
+	private String s3Key;
+
 	@Enumerated(EnumType.STRING)
 	@Column(nullable = false, length = 20)
 	private SourceDocumentStatus status;
@@ -57,15 +64,17 @@ public class SourceDocument {
 	@Column(name = "updated_at", nullable = false)
 	private Instant updatedAt;
 
-	private SourceDocument(UUID handoverId, String fileName, String mimeType) {
+	private SourceDocument(UUID handoverId, String fileName, String mimeType, long fileSize, String s3Key) {
 		this.handoverId = handoverId;
 		this.fileName = fileName;
 		this.mimeType = mimeType;
+		this.fileSize = fileSize;
+		this.s3Key = s3Key;
 		this.status = SourceDocumentStatus.EXTRACTING;
 	}
 
-	public static SourceDocument create(UUID handoverId, String fileName, String mimeType) {
-		return new SourceDocument(handoverId, fileName, mimeType);
+	public static SourceDocument create(UUID handoverId, String fileName, String mimeType, long fileSize, String s3Key) {
+		return new SourceDocument(handoverId, fileName, mimeType, fileSize, s3Key);
 	}
 
 	public void markIndexed(String extractedText) {

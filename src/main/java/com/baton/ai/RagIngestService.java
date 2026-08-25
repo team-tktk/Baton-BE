@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.baton.ai.dto.DownloadedFile;
 import com.baton.common.BusinessException;
 import com.baton.common.ErrorCode;
 
@@ -35,6 +36,7 @@ public class RagIngestService {
 	private final SourceDocumentRepository sourceDocumentRepository;
 	private final VectorStore vectorStore;
 	private final TokenTextSplitter tokenTextSplitter;
+	private final S3FileStorage s3FileStorage;
 
 	@Transactional
 	public SourceDocument ingest(UUID handoverId, MultipartFile file) {
@@ -42,8 +44,18 @@ public class RagIngestService {
 			throw new BusinessException(ErrorCode.BAD_REQUEST, "빈 파일은 업로드할 수 없습니다.");
 		}
 
+		byte[] fileBytes;
+		try {
+			fileBytes = file.getBytes();
+		} catch (Exception e) {
+			throw new BusinessException(ErrorCode.AI_FILE_PARSE_FAILED);
+		}
+
+		String s3Key = s3FileStorage.upload(handoverId, file.getOriginalFilename(), file.getContentType(), fileBytes);
+
 		SourceDocument sourceDocument = sourceDocumentRepository.save(
-				SourceDocument.create(handoverId, file.getOriginalFilename(), file.getContentType()));
+				SourceDocument.create(handoverId, file.getOriginalFilename(), file.getContentType(),
+						file.getSize(), s3Key));
 
 		try {
 			List<Document> rawDocuments = extractText(file);
@@ -96,5 +108,33 @@ public class RagIngestService {
 			chunk.getMetadata().put(META_FILE_NAME, sourceDocument.getFileName());
 			chunk.getMetadata().put(META_CHUNK_INDEX, i);
 		}
+	}
+
+	@Transactional(readOnly = true)
+	public List<SourceDocument> listByHandover(UUID handoverId) {
+		return sourceDocumentRepository.findAllByHandoverId(handoverId);
+	}
+
+	@Transactional(readOnly = true)
+	public DownloadedFile download(UUID handoverId, UUID fileId) {
+		SourceDocument sourceDocument = findOwned(handoverId, fileId);
+		byte[] content = s3FileStorage.download(sourceDocument.getS3Key());
+		return new DownloadedFile(sourceDocument.getFileName(), sourceDocument.getMimeType(), content);
+	}
+
+	@Transactional
+	public void delete(UUID handoverId, UUID fileId) {
+		SourceDocument sourceDocument = findOwned(handoverId, fileId);
+		s3FileStorage.delete(sourceDocument.getS3Key());
+		sourceDocumentRepository.delete(sourceDocument);
+	}
+
+	private SourceDocument findOwned(UUID handoverId, UUID fileId) {
+		SourceDocument sourceDocument = sourceDocumentRepository.findById(fileId)
+				.orElseThrow(() -> new BusinessException(ErrorCode.AI_SOURCE_DOCUMENT_NOT_FOUND));
+		if (!sourceDocument.getHandoverId().equals(handoverId)) {
+			throw new BusinessException(ErrorCode.AI_SOURCE_DOCUMENT_NOT_FOUND);
+		}
+		return sourceDocument;
 	}
 }

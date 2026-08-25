@@ -1,11 +1,16 @@
 package com.baton.ai;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
 
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -20,6 +25,8 @@ import org.springframework.web.multipart.MultipartFile;
 import com.baton.ai.dto.ChatAnswerResponse;
 import com.baton.ai.dto.ChatQuestionRequest;
 import com.baton.ai.dto.ClarificationQuestionResponse;
+import com.baton.ai.dto.DownloadedFile;
+import com.baton.ai.dto.FileMetadataResponse;
 import com.baton.ai.dto.FileUploadResponse;
 import com.baton.ai.dto.HandoverDraftResponse;
 import com.baton.ai.dto.QuestionAnswerRequest;
@@ -65,6 +72,52 @@ public class RagController {
 
 		SourceDocument sourceDocument = ragIngestService.ingest(handoverId, file);
 		return FileUploadResponse.from(sourceDocument);
+	}
+
+	@Operation(summary = "업로드된 파일 목록 조회", description = "참여자(인계자/인수자/관리자) 모두 가능.")
+	@GetMapping("/files")
+	public List<FileMetadataResponse> listFiles(@PathVariable UUID handoverId, Authentication authentication) {
+		Handover handover = loadHandover(handoverId);
+		handoverPermission.requireViewer(handover, currentUserId(authentication));
+
+		return ragIngestService.listByHandover(handoverId).stream()
+				.map(FileMetadataResponse::from)
+				.toList();
+	}
+
+	@Operation(summary = "업로드된 파일 원본 다운로드", description = "참여자(인계자/인수자/관리자) 모두 가능.")
+	@GetMapping("/files/{fileId}/download")
+	public ResponseEntity<byte[]> downloadFile(
+			@PathVariable UUID handoverId,
+			@PathVariable UUID fileId,
+			Authentication authentication) {
+		Handover handover = loadHandover(handoverId);
+		handoverPermission.requireViewer(handover, currentUserId(authentication));
+
+		DownloadedFile file = ragIngestService.download(handoverId, fileId);
+		ContentDisposition contentDisposition = ContentDisposition.attachment()
+				.filename(file.fileName(), StandardCharsets.UTF_8)
+				.build();
+
+		return ResponseEntity.ok()
+				.contentType(file.mimeType() != null
+						? MediaType.parseMediaType(file.mimeType())
+						: MediaType.APPLICATION_OCTET_STREAM)
+				.header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition.toString())
+				.body(file.content());
+	}
+
+	@Operation(summary = "업로드된 파일 삭제", description = "인계자만 가능.")
+	@DeleteMapping("/files/{fileId}")
+	@ResponseStatus(HttpStatus.NO_CONTENT)
+	public void deleteFile(
+			@PathVariable UUID handoverId,
+			@PathVariable UUID fileId,
+			Authentication authentication) {
+		Handover handover = loadHandover(handoverId);
+		handoverPermission.requireOwner(handover, currentUserId(authentication));
+
+		ragIngestService.delete(handoverId, fileId);
 	}
 
 	@Operation(summary = "인수인계 문서 기반 질의응답", description = "업로드된 문서 안에서 근거를 찾아 답변한다. 참여자(인계자/인수자/관리자) 모두 가능.")
