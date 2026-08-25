@@ -66,6 +66,16 @@ public class HandoverController {
 		return handoverService.listReceived(currentUserId(authentication), status, cursor, size);
 	}
 
+	@Operation(summary = "관리자 검토 목록", description = "관리자(REVIEWER)로 지정된 인수인계를 상태 필터·커서 페이지네이션으로 조회한다.")
+	@GetMapping("/reviews")
+	public HandoverListResponse listReviews(
+			@RequestParam(required = false) HandoverStatus status,
+			@RequestParam(required = false) UUID cursor,
+			@RequestParam(required = false, defaultValue = "20") int size,
+			Authentication authentication) {
+		return handoverService.listReviews(currentUserId(authentication), status, cursor, size);
+	}
+
 	@Operation(summary = "인수인계 상세 조회", description = "헤더/참여자/업무범위와 요청자 기준 권한을 반환한다.")
 	@GetMapping("/{handoverId}")
 	public HandoverResponse get(

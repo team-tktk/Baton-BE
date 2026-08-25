@@ -72,6 +72,20 @@ public class HandoverService {
 		return buildList(rows, pageSize, counts, HandoverSummaryResponse::ofReceived, userId);
 	}
 
+	/**
+	 * 관리자(REVIEWER로 지정된 사람)의 검토 목록. 받은 목록과 동일한 쿼리를 role=REVIEWER로 재사용한다.
+	 * 관리자는 수신 개념이 없어 receiptStatus는 담지 않는다(ofSent 매퍼).
+	 */
+	@Transactional(readOnly = true)
+	public HandoverListResponse listReviews(UUID userId, HandoverStatus status, UUID cursor, int size) {
+		int pageSize = clampSize(size);
+		List<Handover> rows = handoverRepository.findReceived(
+				userId, ParticipantRole.REVIEWER, status, cursor, PageRequest.of(0, pageSize + 1));
+		Map<HandoverStatus, Long> counts = toStatusCounts(
+				handoverRepository.countReceivedByStatus(userId, ParticipantRole.REVIEWER));
+		return buildList(rows, pageSize, counts, (h, v) -> HandoverSummaryResponse.ofSent(h), userId);
+	}
+
 	@Transactional(readOnly = true)
 	public HandoverResponse getForViewer(UUID handoverId, UUID viewerId) {
 		Handover handover = load(handoverId);
