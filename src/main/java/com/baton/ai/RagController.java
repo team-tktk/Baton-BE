@@ -35,6 +35,7 @@ import com.baton.ai.dto.ChatMessageResponse;
 import com.baton.ai.dto.HandoverDraftResponse;
 import com.baton.ai.dto.QuestionAnswerRequest;
 import com.baton.ai.dto.UpdateDraftRequest;
+import com.baton.ai.dto.SourceDetailResponse;
 import com.baton.ai.dto.SourceEvidenceResponse;
 import com.baton.auth.AuthService;
 import com.baton.common.BusinessException;
@@ -129,6 +130,31 @@ public class RagController {
 		handoverPermission.requireOwner(handover, currentUserId(authentication));
 
 		ragIngestService.delete(handoverId, fileId);
+	}
+
+	@Operation(summary = "파일 추출/임베딩 재처리", description = "실패(FAILED)한 파일을 S3 원본으로 다시 처리한다. 인계자만 가능.")
+	@PostMapping("/files/{fileId}/retry")
+	public FileUploadResponse retryFile(
+			@PathVariable UUID handoverId,
+			@PathVariable UUID fileId,
+			Authentication authentication) {
+		Handover handover = loadHandover(handoverId);
+		handoverPermission.requireOwner(handover, currentUserId(authentication));
+
+		SourceDocument sourceDocument = ragIngestService.retry(handoverId, fileId);
+		return FileUploadResponse.from(sourceDocument);
+	}
+
+	@Operation(summary = "AI 답변 근거 원문 단건 조회", description = "citation을 눌렀을 때 원문 메타데이터를 보여준다. 참여자 모두 가능.")
+	@GetMapping("/sources/{sourceId}")
+	public SourceDetailResponse getSourceDetail(
+			@PathVariable UUID handoverId,
+			@PathVariable UUID sourceId,
+			Authentication authentication) {
+		Handover handover = loadHandover(handoverId);
+		handoverPermission.requireViewer(handover, currentUserId(authentication));
+
+		return SourceDetailResponse.from(ragIngestService.getSource(handoverId, sourceId));
 	}
 
 	@Operation(summary = "인수인계 문서 기반 질의응답", description = "업로드된 문서 안에서 근거를 찾아 답변한다. 참여자(인계자/인수자/관리자) 모두 가능.")
