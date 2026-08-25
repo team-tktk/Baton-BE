@@ -11,5 +11,6 @@ import java.util.UUID;
 public record CreateHandoverRequest(
 		String title,
 		List<UUID> recipientIds,
+		List<UUID> reviewerIds,
 		List<WorkScopeInput> workScopes) {
 }

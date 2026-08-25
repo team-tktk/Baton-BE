@@ -29,6 +29,7 @@ public enum ErrorCode {
 	HANDOVER_FORBIDDEN(HttpStatus.FORBIDDEN, "해당 인수인계에 접근할 권한이 없습니다"),
 	HANDOVER_NOT_EDITABLE(HttpStatus.CONFLICT, "제출 이후에는 이 방식으로 수정/삭제할 수 없습니다"),
 	HANDOVER_INVALID_PARTICIPANT(HttpStatus.BAD_REQUEST, "존재하지 않는 사용자를 참여자로 지정했습니다"),
+	HANDOVER_INVALID_STATE(HttpStatus.CONFLICT, "현재 상태에서는 할 수 없는 작업입니다"),
 
 	// ── AI / RAG ────────────────────────────────────────────
 	AI_UNSUPPORTED_FILE_TYPE(HttpStatus.BAD_REQUEST, "지원하지 않는 파일 형식입니다"),
