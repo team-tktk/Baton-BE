@@ -45,6 +45,12 @@ public class HandoverController {
 					인계자가 새 인수인계 초안(`DRAFT`)을 만든다. 제목·인수자·관리자·업무범위를 함께 넘기면 초기값으로 채운다.
 					생성자가 곧 인계자(owner)가 된다. 모든 필드는 선택 — 빈 초안을 먼저 만들고 이후 `PATCH`로 채워도 된다.
 					`recipientIds`/`reviewerIds`는 `GET /members` 검색 결과의 사용자 id를 사용한다.
+
+					**제목(`title`) 정책** — 프론트 생성 화면에 제목 입력란이 없어 **선택값**이며, 백엔드가 다음 순서로 채운다:
+					1) 제목을 보내면 그대로 사용,
+					2) 생략하면 첫 번째 업무범위(`workScopes[0].title`)를 제목으로 자동 생성,
+					3) 업무범위도 없으면 기본 제목(`"제목 없는 인수인계"`). 이후 `PATCH`로 언제든 변경 가능.
+
 					- 성공: `201 Created`
 					- 존재하지 않는 사용자를 참여자로 지정: `400`(code=`HANDOVER_INVALID_PARTICIPANT`)
 
@@ -71,6 +77,10 @@ public class HandoverController {
 	@Operation(summary = "보낸 인수인계 목록",
 			description = """
 					로그인 사용자가 **인계자(owner)로 만든** 인수인계를 조회한다. 필터 탭 뱃지용 상태별 개수(`statusCounts`, 키=HandoverStatus 이름)를 함께 내린다.
+
+					각 항목(`HandoverSummaryResponse`)은 목록 카드를 바로 그릴 수 있게 다음을 담는다:
+					`owner`(보낸 사람 이름·팀·직책), `workScopeSummary`(대표 업무명 = 첫 업무범위 제목), `workScopeCount`(업무 개수),
+					`fileCount`(첨부 개수), `recipientCount`, `status`, `submittedAt`(제출일)/`createdAt`/`updatedAt`. `receiptStatus`는 보낸 목록에선 null.
 					""")
 	@GetMapping("/sent")
 	public HandoverListResponse listSent(
@@ -92,6 +102,8 @@ public class HandoverController {
 					- `COMPLETED`: 인수인계 완료
 
 					`statusCounts`도 이 세 버킷(키=UNREAD/IN_PROGRESS/COMPLETED) 기준으로 내린다.
+					각 항목은 보낸 목록과 동일한 요약 필드(`owner`·`workScopeSummary`·`fileCount` 등)를 담고,
+					`receiptStatus`에는 **현재 사용자(인수자)의 수신 상태(UNREAD/READ)** 가 채워진다.
 					""")
 	@GetMapping("/received")
 	public HandoverListResponse listReceived(
@@ -124,7 +136,12 @@ public class HandoverController {
 
 	@Operation(summary = "인수인계 상세 조회",
 			description = """
-					헤더(제목·상태·시각)·참여자·업무범위와 함께, 요청자 기준 권한 플래그를 반환한다. 참여자(인계자/인수자/관리자) 모두 가능.
+					헤더(제목·상태·시각)·참여자·업무범위와 함께, 요청자 기준 권한 플래그(`viewerRole`)를 반환한다. 참여자(인계자/인수자/관리자) 모두 가능.
+
+					`owner`와 `participants[]`는 `userId`뿐 아니라 이름·팀·직책까지 담는다:
+					`participants[]` = `{ userId, name, team, position, role(RECIPIENT/REVIEWER), receiptStatus(인수자면 UNREAD/READ, 관리자면 null) }`.
+					→ 인계자(owner)/인수자/관리자를 별도 사용자 조회 없이 표시할 수 있다.
+
 					- 참여자가 아니면: `403`(code=`HANDOVER_FORBIDDEN`)
 					- 없는 id: `404`(code=`HANDOVER_NOT_FOUND`)
 					""")

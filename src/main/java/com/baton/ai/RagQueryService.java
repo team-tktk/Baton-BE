@@ -153,6 +153,7 @@ public class RagQueryService {
 				sourceDocument.getId(),
 				sourceDocument.getFileName(),
 				buildLocator(match),
+				sourceDocument.getId(),   // fileId == sourceId (같은 SourceDocument id) — 다운로드 API용
 				sourceDocument.getUpdatedAt() != null ? sourceDocument.getUpdatedAt() : Instant.now());
 	}
 
