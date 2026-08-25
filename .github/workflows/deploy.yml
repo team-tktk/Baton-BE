@@ -1,0 +1,52 @@
+name: Deploy
+
+# CI 워크플로우가 develop에서 성공적으로 끝난 뒤에만 배포한다 (테스트 통과 못하면 배포 안 됨).
+on:
+  workflow_run:
+    workflows: ["CI"]
+    branches: [develop]
+    types: [completed]
+
+jobs:
+  deploy:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      # CI가 이미 테스트를 통과시켰으니 여기서는 다시 안 돌린다.
+      - name: Build jar
+        run: ./gradlew bootJar --no-daemon -x test
+
+      - name: Deploy to EC2
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts
+
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            build/libs/baton-0.0.1-SNAPSHOT.jar "$EC2_USER@$EC2_HOST:/tmp/app.jar"
+
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no "$EC2_USER@$EC2_HOST" '
+            sudo mv /tmp/app.jar /opt/baton/app.jar &&
+            sudo systemctl restart baton.service &&
+            sleep 5 &&
+            sudo systemctl is-active baton.service
+          '
