@@ -11,9 +11,11 @@ public record UserResponse(
 		String email,
 		String name,
 		String team,
+		String position,
 		Instant createdAt) {
 
 	public static UserResponse from(User user) {
-		return new UserResponse(user.getId(), user.getEmail(), user.getName(), user.getTeam(), user.getCreatedAt());
+		return new UserResponse(user.getId(), user.getEmail(), user.getName(),
+				user.getTeam(), user.getPosition(), user.getCreatedAt());
 	}
 }
