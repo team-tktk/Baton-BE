@@ -24,6 +24,12 @@ public enum ErrorCode {
 	AUTH_INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED, "이메일 또는 비밀번호가 올바르지 않습니다"),
 	AUTH_EMAIL_DUPLICATE(HttpStatus.CONFLICT, "이미 사용 중인 이메일입니다"),
 
+	// ── 인수인계(handover) ──────────────────────────────────
+	HANDOVER_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 인수인계입니다"),
+	HANDOVER_FORBIDDEN(HttpStatus.FORBIDDEN, "해당 인수인계에 접근할 권한이 없습니다"),
+	HANDOVER_NOT_EDITABLE(HttpStatus.CONFLICT, "제출 이후에는 이 방식으로 수정/삭제할 수 없습니다"),
+	HANDOVER_INVALID_PARTICIPANT(HttpStatus.BAD_REQUEST, "존재하지 않는 사용자를 참여자로 지정했습니다"),
+
 	// ── AI / RAG ────────────────────────────────────────────
 	AI_UNSUPPORTED_FILE_TYPE(HttpStatus.BAD_REQUEST, "지원하지 않는 파일 형식입니다"),
 	AI_FILE_PARSE_FAILED(HttpStatus.UNPROCESSABLE_ENTITY, "파일에서 텍스트를 추출하지 못했습니다"),
