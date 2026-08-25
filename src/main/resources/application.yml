@@ -9,10 +9,11 @@ spring:
       enabled: true
 
   # 파일 업로드 한도 (RAG 문서 업로드용). 기본값 1MB라 금방 막힘.
+  # 프론트 안내(50MB) 기준으로 통일.
   servlet:
     multipart:
-      max-file-size: 20MB
-      max-request-size: 20MB
+      max-file-size: 50MB
+      max-request-size: 50MB
 
   datasource:
     url: jdbc:postgresql://localhost:5432/baton
@@ -37,19 +38,22 @@ spring:
         format_sql: true
         default_batch_fetch_size: 100
 
-  # ── RAG 켤 때 주석 해제 (build.gradle의 두 줄도 같이) ──────
-  # ai:
-  #   openai:
-  #     api-key: ${OPENAI_API_KEY}
-  #     embedding:
-  #       options:
-  #         model: text-embedding-3-small   # 1536차원
-  #   vectorstore:
-  #     pgvector:
-  #       initialize-schema: true           # vector_store 테이블 자동 생성 (개발용)
-  #       index-type: HNSW
-  #       distance-type: COSINE_DISTANCE
-  #       dimensions: 1536                  # 임베딩 모델 차원과 반드시 일치
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY}
+      embedding:
+        options:
+          model: text-embedding-3-small   # 1536차원
+      chat:
+        options:
+          model: gpt-4o-mini
+          temperature: 0.3                # 근거 기반 답변이라 낮게
+    vectorstore:
+      pgvector:
+        initialize-schema: true           # vector_store 테이블 자동 생성 (개발용)
+        index-type: HNSW
+        distance-type: COSINE_DISTANCE
+        dimensions: 1536                  # 임베딩 모델 차원과 반드시 일치
 
 springdoc:
   swagger-ui:

@@ -56,10 +56,10 @@ dependencies {
 	developmentOnly 'org.springframework.boot:spring-boot-devtools'
 
 	// ── RAG ────────────────────────────────────────────────
-	// 임베딩 모델 정하면 아래 두 줄 + application.yml의 ai 블록 주석 해제.
-	// (모델 스타터 없이 vector-store만 켜면 EmbeddingModel 빈이 없어서 기동 실패함)
-	// implementation 'org.springframework.ai:spring-ai-starter-vector-store-pgvector'
-	// implementation 'org.springframework.ai:spring-ai-starter-model-openai'
+	implementation 'org.springframework.ai:spring-ai-starter-vector-store-pgvector'
+	implementation 'org.springframework.ai:spring-ai-starter-model-openai'
+	// PDF/DOCX/XLSX/PPTX 등 여러 포맷을 하나의 리더로 파싱
+	implementation 'org.springframework.ai:spring-ai-tika-document-reader'
 
 	// ── 로그인/인증 (HTTP-only 쿠키 세션) ──────────────────
 	implementation 'org.springframework.boot:spring-boot-starter-security'

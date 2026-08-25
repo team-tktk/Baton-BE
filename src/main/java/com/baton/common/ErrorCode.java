@@ -22,7 +22,12 @@ public enum ErrorCode {
 	// ── 인증/회원 ───────────────────────────────────────────
 	AUTH_REQUIRED(HttpStatus.UNAUTHORIZED, "로그인이 필요합니다"),
 	AUTH_INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED, "이메일 또는 비밀번호가 올바르지 않습니다"),
-	AUTH_EMAIL_DUPLICATE(HttpStatus.CONFLICT, "이미 사용 중인 이메일입니다");
+	AUTH_EMAIL_DUPLICATE(HttpStatus.CONFLICT, "이미 사용 중인 이메일입니다"),
+
+	// ── AI / RAG ────────────────────────────────────────────
+	AI_UNSUPPORTED_FILE_TYPE(HttpStatus.BAD_REQUEST, "지원하지 않는 파일 형식입니다"),
+	AI_FILE_PARSE_FAILED(HttpStatus.UNPROCESSABLE_ENTITY, "파일에서 텍스트를 추출하지 못했습니다"),
+	AI_SOURCE_DOCUMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 문서입니다");
 
 	private final HttpStatus status;
 	private final String message;
