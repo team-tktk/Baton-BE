@@ -2,6 +2,7 @@ package com.baton.ai;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.springframework.ai.document.Document;
 import org.springframework.ai.reader.tika.TikaDocumentReader;
@@ -45,11 +46,16 @@ public class RagIngestService {
 				SourceDocument.create(handoverId, file.getOriginalFilename(), file.getContentType()));
 
 		try {
-			List<Document> chunks = extractAndSplit(file);
+			List<Document> rawDocuments = extractText(file);
+			String extractedText = rawDocuments.stream()
+					.map(Document::getText)
+					.collect(Collectors.joining("\n\n"));
+
+			List<Document> chunks = tokenTextSplitter.apply(rawDocuments);
 			attachMetadata(chunks, handoverId, sourceDocument);
 
 			vectorStore.add(chunks);
-			sourceDocument.markIndexed();
+			sourceDocument.markIndexed(extractedText);
 		} catch (BusinessException e) {
 			sourceDocument.markFailed();
 			throw e;
@@ -62,7 +68,7 @@ public class RagIngestService {
 		return sourceDocument;
 	}
 
-	private List<Document> extractAndSplit(MultipartFile file) throws Exception {
+	private List<Document> extractText(MultipartFile file) throws Exception {
 		ByteArrayResource resource = new ByteArrayResource(file.getBytes()) {
 			@Override
 			public String getFilename() {
@@ -79,7 +85,7 @@ public class RagIngestService {
 			throw new BusinessException(ErrorCode.AI_FILE_PARSE_FAILED);
 		}
 
-		return tokenTextSplitter.apply(rawDocuments);
+		return rawDocuments;
 	}
 
 	private void attachMetadata(List<Document> chunks, UUID handoverId, SourceDocument sourceDocument) {
