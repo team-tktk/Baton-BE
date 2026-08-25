@@ -115,6 +115,32 @@ public class Handover {
 		return new WorkScope(this, title, description);
 	}
 
+	// ── 상태 전이 ────────────────────────────────────────────
+
+	/** 제출 가능한 단계인가(작성/수정 중 또는 보완요청 후 재제출). */
+	public boolean isSubmittable() {
+		return status == HandoverStatus.DRAFT
+				|| status == HandoverStatus.EDITING
+				|| status == HandoverStatus.REVISION_REQUESTED;
+	}
+
+	public boolean isSubmitted() {
+		return status == HandoverStatus.PENDING_REVIEW;
+	}
+
+	/** 인수자에게 전달하고 관리자 검토 대기로 전환. 제출 시각 기록. */
+	public void markSubmitted() {
+		this.status = HandoverStatus.PENDING_REVIEW;
+		this.submittedAt = Instant.now();
+	}
+
+	/** 해당 인수자의 수신 상태를 READ로. 인수자가 아니면 아무 일도 하지 않는다(멱등). */
+	public void acknowledgeBy(UUID userId) {
+		this.participants.stream()
+				.filter(p -> p.getRole() == ParticipantRole.RECIPIENT && p.getUserId().equals(userId))
+				.forEach(HandoverParticipant::markRead);
+	}
+
 	// ── 권한 판정 ────────────────────────────────────────────
 
 	public boolean isOwner(UUID userId) {

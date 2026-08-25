@@ -11,11 +11,13 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.baton.auth.AuthService;
 import com.baton.handover.dto.CreateHandoverRequest;
+import com.baton.handover.dto.HandoverListResponse;
 import com.baton.handover.dto.HandoverResponse;
 import com.baton.handover.dto.UpdateHandoverRequest;
 
@@ -44,6 +46,26 @@ public class HandoverController {
 		return handoverService.create(currentUserId(authentication), request);
 	}
 
+	@Operation(summary = "보낸 인수인계 목록", description = "인계자가 만든 인수인계를 상태 필터·커서 페이지네이션으로 조회한다.")
+	@GetMapping("/sent")
+	public HandoverListResponse listSent(
+			@RequestParam(required = false) HandoverStatus status,
+			@RequestParam(required = false) UUID cursor,
+			@RequestParam(required = false, defaultValue = "20") int size,
+			Authentication authentication) {
+		return handoverService.listSent(currentUserId(authentication), status, cursor, size);
+	}
+
+	@Operation(summary = "받은 인수인계 목록", description = "인수자가 받은 인수인계를 상태 필터·커서 페이지네이션으로 조회한다.")
+	@GetMapping("/received")
+	public HandoverListResponse listReceived(
+			@RequestParam(required = false) HandoverStatus status,
+			@RequestParam(required = false) UUID cursor,
+			@RequestParam(required = false, defaultValue = "20") int size,
+			Authentication authentication) {
+		return handoverService.listReceived(currentUserId(authentication), status, cursor, size);
+	}
+
 	@Operation(summary = "인수인계 상세 조회", description = "헤더/참여자/업무범위와 요청자 기준 권한을 반환한다.")
 	@GetMapping("/{handoverId}")
 	public HandoverResponse get(
@@ -59,6 +81,22 @@ public class HandoverController {
 			@Valid @RequestBody UpdateHandoverRequest request,
 			Authentication authentication) {
 		return handoverService.update(handoverId, currentUserId(authentication), request);
+	}
+
+	@Operation(summary = "인수인계 제출", description = "인계자가 인수자에게 전달하고 관리자 검토를 시작한다(→ PENDING_REVIEW). 멱등.")
+	@PostMapping("/{handoverId}/submit")
+	public HandoverResponse submit(
+			@PathVariable UUID handoverId,
+			Authentication authentication) {
+		return handoverService.submit(handoverId, currentUserId(authentication));
+	}
+
+	@Operation(summary = "수신 확인", description = "인수자가 문서를 처음 열어 수신 상태를 READ로 바꾼다. 멱등.")
+	@PostMapping("/{handoverId}/acknowledge")
+	public HandoverResponse acknowledge(
+			@PathVariable UUID handoverId,
+			Authentication authentication) {
+		return handoverService.acknowledge(handoverId, currentUserId(authentication));
 	}
 
 	@Operation(summary = "인수인계 초안 삭제", description = "인계자가 제출 전(DRAFT) 초안을 삭제한다.")
