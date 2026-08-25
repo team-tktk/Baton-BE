@@ -21,12 +21,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class AnalysisJobService {
 
-	private static final EnumSet<AnalysisJobStatus> ACTIVE_STATUSES = EnumSet.of(
-			AnalysisJobStatus.QUEUED,
-			AnalysisJobStatus.PARSING,
-			AnalysisJobStatus.INDEXING,
-			AnalysisJobStatus.GENERATING_QUESTIONS,
-			AnalysisJobStatus.GENERATING_DRAFT);
+	private static final EnumSet<AnalysisJobStatus> ACTIVE_STATUSES = AnalysisJobStatus.active();
 
 	private final AnalysisJobRepository analysisJobRepository;
 	private final HandoverRepository handoverRepository;
