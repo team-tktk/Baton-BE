@@ -18,6 +18,7 @@ import com.baton.ai.dto.DownloadedFile;
 import com.baton.common.BusinessException;
 import com.baton.common.ErrorCode;
 
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -42,6 +43,7 @@ public class RagIngestService {
 	private final VectorStore vectorStore;
 	private final TokenTextSplitter tokenTextSplitter;
 	private final S3FileStorage s3FileStorage;
+	private final EntityManager entityManager;
 
 	/**
 	 * RagController 클래스 전체에 @Transactional이 걸려있어서(권한 체크의 지연로딩 때문), 여기서
@@ -68,7 +70,7 @@ public class RagIngestService {
 				handoverId, file.getOriginalFilename(), file.getContentType(), file.getSize(), s3Key);
 
 		runPipeline(handoverId, sourceDocument, fileBytes);
-		return sourceDocument;
+		return refreshed(sourceDocument);
 	}
 
 	/** 추출/임베딩 실패한 파일을 S3에 저장된 원본으로 다시 처리한다. */
@@ -80,7 +82,21 @@ public class RagIngestService {
 
 		byte[] fileBytes = s3FileStorage.download(sourceDocument.getS3Key());
 		runPipeline(handoverId, sourceDocument, fileBytes);
-		return sourceDocument;
+		return refreshed(sourceDocument);
+	}
+
+	/**
+	 * createInitial/markIndexed는 REQUIRES_NEW(별도 트랜잭션·별도 영속성 컨텍스트)로 커밋된다.
+	 * ingest()가 들고 있는 sourceDocument는 그 커밋을 반영 못한 detached 인스턴스이고,
+	 * retry()가 들고 있는 sourceDocument는 findOwned()로 이미 현재 영속성 컨텍스트에 managed로 붙어있어
+	 * 그냥 다시 findById해도 1차 캐시가 같은(오래된) 인스턴스를 그대로 돌려준다.
+	 * 두 경우 다 detach로 캐시에서 떼어낸 뒤 다시 조회해야 DB의 진짜 최종 상태를 읽어온다.
+	 * (실패 시엔 runPipeline이 예외를 던져 이 지점에 도달하지 않는다.)
+	 */
+	private SourceDocument refreshed(SourceDocument sourceDocument) {
+		entityManager.detach(sourceDocument);
+		return sourceDocumentRepository.findById(sourceDocument.getId())
+				.orElseThrow(() -> new BusinessException(ErrorCode.AI_SOURCE_DOCUMENT_NOT_FOUND));
 	}
 
 	private void validateExtension(String fileName) {
