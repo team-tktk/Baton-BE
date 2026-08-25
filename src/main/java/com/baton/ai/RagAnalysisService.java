@@ -74,6 +74,15 @@ public class RagAnalysisService {
 		return HandoverDraftResponse.from(draft);
 	}
 
+	/** 사람이 초안을 직접 수정한다(자동저장). 필드 단위가 아니라 content 전체를 교체한다. */
+	@Transactional
+	public HandoverDraftResponse updateDraft(UUID handoverId, HandoverDraftContent content) {
+		HandoverDraft draft = handoverDraftRepository.findByHandoverId(handoverId)
+				.orElseThrow(() -> new BusinessException(ErrorCode.AI_DRAFT_NOT_FOUND));
+		draft.replaceContent(content);
+		return HandoverDraftResponse.from(draft);
+	}
+
 	public List<ClarificationQuestionResponse> getQuestions(UUID handoverId) {
 		return clarificationQuestionRepository.findAllByHandoverId(handoverId).stream()
 				.map(ClarificationQuestionResponse::from)
@@ -148,5 +157,53 @@ public class RagAnalysisService {
 			log.error("[*] Failed to serialize existing draft", e);
 			throw new BusinessException(ErrorCode.INTERNAL_ERROR);
 		}
+	}
+
+	/** 초안을 Markdown 문서로 변환한다. */
+	public String exportMarkdown(UUID handoverId, String title) {
+		HandoverDraftContent content = handoverDraftRepository.findByHandoverId(handoverId)
+				.orElseThrow(() -> new BusinessException(ErrorCode.AI_DRAFT_NOT_FOUND))
+				.getContent();
+
+		StringBuilder md = new StringBuilder();
+		md.append("# ").append(title).append("\n\n");
+		md.append("## 업무 목적\n").append(nullToDash(content.purpose())).append("\n\n");
+		md.append("## 인수인계 완료 기준\n").append(nullToDash(content.completionCriteria())).append("\n\n");
+
+		md.append("## 진행 중인 업무\n");
+		appendTasks(md, content.ongoingTasks());
+		md.append("\n## 반복 업무\n");
+		appendTasks(md, content.recurringTasks());
+
+		md.append("\n## 업무 기준과 예외\n");
+		if (content.rulesAndExceptions() == null || content.rulesAndExceptions().isEmpty()) {
+			md.append("- (없음)\n");
+		} else {
+			content.rulesAndExceptions().forEach(rule -> md.append("- ").append(rule).append("\n"));
+		}
+
+		md.append("\n## 주요 관계자\n");
+		if (content.stakeholders() == null || content.stakeholders().isEmpty()) {
+			md.append("- (없음)\n");
+		} else {
+			content.stakeholders().forEach(s -> md.append("- **").append(s.name()).append("** (")
+					.append(s.team()).append(") — ").append(s.helpWith()).append("\n"));
+		}
+
+		return md.toString();
+	}
+
+	private void appendTasks(StringBuilder md, List<com.baton.ai.dto.TaskItem> tasks) {
+		if (tasks == null || tasks.isEmpty()) {
+			md.append("- (없음)\n");
+			return;
+		}
+		tasks.forEach(task -> md.append("- **").append(task.title()).append("** [")
+				.append(task.status()).append("] — ").append(task.description())
+				.append(" (다음 행동: ").append(task.nextAction()).append(")\n"));
+	}
+
+	private String nullToDash(String value) {
+		return (value == null || value.isBlank()) ? "-" : value;
 	}
 }

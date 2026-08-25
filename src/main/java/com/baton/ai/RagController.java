@@ -12,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -28,8 +29,10 @@ import com.baton.ai.dto.ClarificationQuestionResponse;
 import com.baton.ai.dto.DownloadedFile;
 import com.baton.ai.dto.FileMetadataResponse;
 import com.baton.ai.dto.FileUploadResponse;
+import com.baton.ai.dto.ChatMessageResponse;
 import com.baton.ai.dto.HandoverDraftResponse;
 import com.baton.ai.dto.QuestionAnswerRequest;
+import com.baton.ai.dto.UpdateDraftRequest;
 import com.baton.auth.AuthService;
 import com.baton.common.BusinessException;
 import com.baton.common.ErrorCode;
@@ -133,9 +136,19 @@ public class RagController {
 			@Valid @RequestBody ChatQuestionRequest request,
 			Authentication authentication) {
 		Handover handover = loadHandover(handoverId);
+		UUID userId = currentUserId(authentication);
+		handoverPermission.requireViewer(handover, userId);
+
+		return ragQueryService.answer(handoverId, userId, request.question());
+	}
+
+	@Operation(summary = "AI 대화 이력 조회", description = "참여자(인계자/인수자/관리자) 모두 가능.")
+	@GetMapping("/chat/messages")
+	public List<ChatMessageResponse> listMessages(@PathVariable UUID handoverId, Authentication authentication) {
+		Handover handover = loadHandover(handoverId);
 		handoverPermission.requireViewer(handover, currentUserId(authentication));
 
-		return ragQueryService.answer(handoverId, request.question());
+		return ragQueryService.listMessages(handoverId);
 	}
 
 	@Operation(summary = "AI 인수인계 초안 생성", description = "업로드된 문서를 분석해 구조화된 초안과 확인 질문을 생성한다. 인계자만 가능.")
@@ -154,6 +167,44 @@ public class RagController {
 		handoverPermission.requireViewer(handover, currentUserId(authentication));
 
 		return ragAnalysisService.getDraft(handoverId);
+	}
+
+	@Operation(summary = "인수인계 초안 수정", description = "사람이 직접 고친 내용을 저장한다(자동저장). 인계자만 가능.")
+	@PatchMapping("/document")
+	public HandoverDraftResponse updateDraft(
+			@PathVariable UUID handoverId,
+			@Valid @RequestBody UpdateDraftRequest request,
+			Authentication authentication) {
+		Handover handover = loadHandover(handoverId);
+		handoverPermission.requireOwner(handover, currentUserId(authentication));
+
+		return ragAnalysisService.updateDraft(handoverId, request.content());
+	}
+
+	@Operation(summary = "인수자 첫날 요약", description = "AI 초안과 같은 내용을 인수자 관점 요약 화면용으로 제공한다. 참여자 모두 가능.")
+	@GetMapping("/briefing")
+	public HandoverDraftResponse getBriefing(@PathVariable UUID handoverId, Authentication authentication) {
+		Handover handover = loadHandover(handoverId);
+		handoverPermission.requireViewer(handover, currentUserId(authentication));
+
+		return ragAnalysisService.getDraft(handoverId);
+	}
+
+	@Operation(summary = "인수인계 문서 Markdown 내보내기", description = "참여자(인계자/인수자/관리자) 모두 가능.")
+	@GetMapping("/document/export")
+	public ResponseEntity<byte[]> exportDraft(@PathVariable UUID handoverId, Authentication authentication) {
+		Handover handover = loadHandover(handoverId);
+		handoverPermission.requireViewer(handover, currentUserId(authentication));
+
+		String markdown = ragAnalysisService.exportMarkdown(handoverId, handover.getTitle());
+		ContentDisposition contentDisposition = ContentDisposition.attachment()
+				.filename(handover.getTitle() + ".md", StandardCharsets.UTF_8)
+				.build();
+
+		return ResponseEntity.ok()
+				.contentType(MediaType.parseMediaType("text/markdown;charset=UTF-8"))
+				.header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition.toString())
+				.body(markdown.getBytes(StandardCharsets.UTF_8));
 	}
 
 	@Operation(summary = "AI 확인 질문 목록 조회", description = "인계자만 가능.")
