@@ -11,14 +11,19 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 
 import com.baton.common.RestAuthenticationEntryPoint;
 
 /**
  * 인증/인가 설정. HTTP-only 쿠키 세션 방식.
  *
- * CSRF: SameSite=Lax(application.yml) + REST 규칙(변경은 POST/PUT/PATCH/DELETE)으로 방어하므로 비활성.
- *       나중에 강화하려면 csrf를 CookieCsrfTokenRepository로 켜고 프론트에 X-XSRF-TOKEN 헤더를 추가하면 됨.
+ * CSRF: 쿠키 기반 토큰(CookieCsrfTokenRepository, XSRF-TOKEN 쿠키)으로 방어한다.
+ *       프론트는 GET 응답으로 받은 XSRF-TOKEN 쿠키 값을 상태변경 요청(POST/PUT/PATCH/DELETE)마다
+ *       X-XSRF-TOKEN 헤더로 실어 보내야 한다. SameSite=Lax만으로는 못 막는 multipart 업로드까지 커버.
+ *       - SpaCsrfTokenRequestHandler: 헤더로 온 원본 토큰을 검증(SPA용, BREACH 완화 XOR 병행)
+ *       - CsrfCookieFilter: 매 요청 토큰을 로드해 쿠키가 응답에 실리도록 강제
  * CORS: CorsConfig의 CorsConfigurationSource 빈을 사용(자격증명 쿠키 전송 허용).
  */
 @Configuration
@@ -28,7 +33,10 @@ public class SecurityConfig {
 	public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
 		http
 				.cors(Customizer.withDefaults())
-				.csrf(AbstractHttpConfigurer::disable)
+				.csrf(csrf -> csrf
+						.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+						.csrfTokenRequestHandler(new SpaCsrfTokenRequestHandler()))
+				.addFilterAfter(new CsrfCookieFilter(), BasicAuthenticationFilter.class)
 				.authorizeHttpRequests(auth -> auth
 						// 인증 없이 접근 가능한 공개 엔드포인트
 						.requestMatchers("/api/v1/auth/signup", "/api/v1/auth/login").permitAll()
