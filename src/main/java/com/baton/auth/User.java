@@ -38,18 +38,23 @@ public class User {
 	@Column(nullable = false)
 	private String name;
 
+	/** 소속 팀. 지금은 자유입력 문자열(예: "모아스토어 · 운영팀"). 공유·관리가 필요해지면 Team 엔티티로 분리. */
+	@Column(nullable = false)
+	private String team;
+
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private Instant createdAt;
 
-	private User(String email, String passwordHash, String name) {
+	private User(String email, String passwordHash, String name, String team) {
 		this.email = email;
 		this.passwordHash = passwordHash;
 		this.name = name;
+		this.team = team;
 	}
 
 	/** 새 회원 생성. passwordHash는 반드시 해시된 값이어야 한다(평문 금지). */
-	public static User create(String email, String passwordHash, String name) {
-		return new User(email, passwordHash, name);
+	public static User create(String email, String passwordHash, String name, String team) {
+		return new User(email, passwordHash, name, team);
 	}
 
 	@PrePersist

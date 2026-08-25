@@ -45,7 +45,7 @@ public class AuthController {
 	@PostMapping("/signup")
 	@ResponseStatus(HttpStatus.CREATED)
 	public UserResponse signup(@Valid @RequestBody SignupRequest req) {
-		return UserResponse.from(authService.signup(req.email(), req.password(), req.name()));
+		return UserResponse.from(authService.signup(req.email(), req.password(), req.name(), req.team()));
 	}
 
 	@PostMapping("/login")
