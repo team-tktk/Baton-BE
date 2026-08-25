@@ -199,6 +199,21 @@ public class RagController {
 		return SourceDetailResponse.from(ragIngestService.getSource(handoverId, sourceId));
 	}
 
+	@Operation(summary = "채팅 추천 질문",
+			description = """
+					채팅창에서 바로 눌러볼 수 있는 추천 질문 목록. 인수인계 초안 내용에 근거해 AI가 만들고,
+					초안이 바뀌기 전까지는 캐싱된 결과를 그대로 재사용한다. 참여자 모두 가능.
+					""")
+	@GetMapping("/chat/suggested-questions")
+	public List<String> getSuggestedQuestions(
+			@PathVariable UUID handoverId,
+			Authentication authentication) {
+		Handover handover = loadHandover(handoverId);
+		handoverPermission.requireViewer(handover, currentUserId(authentication));
+
+		return ragAnalysisService.getSuggestedQuestions(handoverId);
+	}
+
 	@Operation(summary = "인수인계 문서 기반 질의응답",
 			description = """
 					업로드된 문서 안에서 근거(citation)를 찾아 답변한다(RAG). 주로 인수자가 첫날 궁금증을 물을 때 쓴다. 참여자 모두 가능.
