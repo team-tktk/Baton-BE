@@ -34,11 +34,17 @@ public class RagIngestService {
 	private static final String META_CHUNK_INDEX = "chunkIndex";
 
 	private final SourceDocumentRepository sourceDocumentRepository;
+	private final SourceDocumentPersistence sourceDocumentPersistence;
 	private final VectorStore vectorStore;
 	private final TokenTextSplitter tokenTextSplitter;
 	private final S3FileStorage s3FileStorage;
 
-	@Transactional
+	/**
+	 * RagController 클래스 전체에 @Transactional이 걸려있어서(권한 체크의 지연로딩 때문), 여기서
+	 * 상태 변경을 직접 save해도 파싱/임베딩 실패 시 컨트롤러 트랜잭션과 함께 롤백돼버린다 —
+	 * FAILED 상태가 DB에 영영 안 남아 재처리(retry) 대상 자체가 사라지는 버그였다.
+	 * 그래서 생성/상태변경은 SourceDocumentPersistence(REQUIRES_NEW)를 통해 독립적으로 커밋한다.
+	 */
 	public SourceDocument ingest(UUID handoverId, MultipartFile file) {
 		if (file == null || file.isEmpty()) {
 			throw new BusinessException(ErrorCode.BAD_REQUEST, "빈 파일은 업로드할 수 없습니다.");
@@ -53,12 +59,28 @@ public class RagIngestService {
 
 		String s3Key = s3FileStorage.upload(handoverId, file.getOriginalFilename(), file.getContentType(), fileBytes);
 
-		SourceDocument sourceDocument = sourceDocumentRepository.save(
-				SourceDocument.create(handoverId, file.getOriginalFilename(), file.getContentType(),
-						file.getSize(), s3Key));
+		SourceDocument sourceDocument = sourceDocumentPersistence.createInitial(
+				handoverId, file.getOriginalFilename(), file.getContentType(), file.getSize(), s3Key);
 
+		runPipeline(handoverId, sourceDocument, fileBytes);
+		return sourceDocument;
+	}
+
+	/** 추출/임베딩 실패한 파일을 S3에 저장된 원본으로 다시 처리한다. */
+	public SourceDocument retry(UUID handoverId, UUID fileId) {
+		SourceDocument sourceDocument = findOwned(handoverId, fileId);
+		if (sourceDocument.getStatus() != SourceDocumentStatus.FAILED) {
+			throw new BusinessException(ErrorCode.BAD_REQUEST, "실패한 파일만 재처리할 수 있습니다.");
+		}
+
+		byte[] fileBytes = s3FileStorage.download(sourceDocument.getS3Key());
+		runPipeline(handoverId, sourceDocument, fileBytes);
+		return sourceDocument;
+	}
+
+	private void runPipeline(UUID handoverId, SourceDocument sourceDocument, byte[] fileBytes) {
 		try {
-			List<Document> rawDocuments = extractText(file);
+			List<Document> rawDocuments = extractText(fileBytes, sourceDocument.getFileName());
 			String extractedText = rawDocuments.stream()
 					.map(Document::getText)
 					.collect(Collectors.joining("\n\n"));
@@ -67,24 +89,22 @@ public class RagIngestService {
 			attachMetadata(chunks, handoverId, sourceDocument);
 
 			vectorStore.add(chunks);
-			sourceDocument.markIndexed(extractedText);
+			sourceDocumentPersistence.markIndexed(sourceDocument.getId(), extractedText);
 		} catch (BusinessException e) {
-			sourceDocument.markFailed();
+			sourceDocumentPersistence.markFailed(sourceDocument.getId());
 			throw e;
 		} catch (Exception e) {
 			log.error("[*] RAG ingest failed for sourceDocumentId={}", sourceDocument.getId(), e);
-			sourceDocument.markFailed();
+			sourceDocumentPersistence.markFailed(sourceDocument.getId());
 			throw new BusinessException(ErrorCode.AI_FILE_PARSE_FAILED);
 		}
-
-		return sourceDocument;
 	}
 
-	private List<Document> extractText(MultipartFile file) throws Exception {
-		ByteArrayResource resource = new ByteArrayResource(file.getBytes()) {
+	private List<Document> extractText(byte[] fileBytes, String fileName) throws Exception {
+		ByteArrayResource resource = new ByteArrayResource(fileBytes) {
 			@Override
 			public String getFilename() {
-				return file.getOriginalFilename();
+				return fileName;
 			}
 		};
 
@@ -113,6 +133,12 @@ public class RagIngestService {
 	@Transactional(readOnly = true)
 	public List<SourceDocument> listByHandover(UUID handoverId) {
 		return sourceDocumentRepository.findAllByHandoverId(handoverId);
+	}
+
+	/** AI 답변의 근거(citation)를 눌렀을 때 원문 메타데이터를 보여준다. */
+	@Transactional(readOnly = true)
+	public SourceDocument getSource(UUID handoverId, UUID sourceId) {
+		return findOwned(handoverId, sourceId);
 	}
 
 	@Transactional(readOnly = true)
