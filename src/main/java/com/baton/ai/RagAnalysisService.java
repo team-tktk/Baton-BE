@@ -3,6 +3,7 @@ package com.baton.ai;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -82,10 +83,17 @@ public class RagAnalysisService {
 			handoverDraftRepository.save(draft);
 
 			clarificationQuestionRepository.deleteAllByHandoverId(handoverId);
-			List<ClarificationQuestion> questions = generatedQuestions.stream()
+			List<ClarificationQuestion> questions = new ArrayList<>(generatedQuestions.stream()
 					.map(q -> ClarificationQuestion.create(
 							handoverId, q.type(), q.questionText(), q.reason(), q.evidence(), q.options()))
-					.toList();
+					.toList());
+			if (questions.isEmpty()) {
+				// 안전장치: 모델이 질문을 하나도 안 냈을 때도 항상 최소 1개는 인계자에게 확인받는다(프롬프트만으론 100% 보장 불가).
+				questions.add(ClarificationQuestion.create(handoverId, ClarificationQuestionType.INTERVIEW,
+						"자료에 담기지 않았지만 후임자가 꼭 알아야 할 내용이 있나요? 있다면 알려주세요.",
+						"자료만으로는 놓칠 수 있는 맥락을 인계자에게 직접 확인하기 위한 기본 질문입니다.",
+						null, List.of()));
+			}
 			clarificationQuestionRepository.saveAll(questions);
 
 			return new AnalysisExecutionResult(HandoverDraftResponse.from(draft), questions.size());
