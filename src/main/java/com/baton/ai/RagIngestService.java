@@ -1,6 +1,7 @@
 package com.baton.ai;
 
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -33,6 +34,9 @@ public class RagIngestService {
 	private static final String META_FILE_NAME = "fileName";
 	private static final String META_CHUNK_INDEX = "chunkIndex";
 
+	/** 프론트/기획서에서 안내하는 지원 형식(PDF, DOCX, XLSX, PPTX)만 받는다. */
+	private static final Set<String> ALLOWED_EXTENSIONS = Set.of("pdf", "docx", "xlsx", "pptx");
+
 	private final SourceDocumentRepository sourceDocumentRepository;
 	private final SourceDocumentPersistence sourceDocumentPersistence;
 	private final VectorStore vectorStore;
@@ -49,6 +53,7 @@ public class RagIngestService {
 		if (file == null || file.isEmpty()) {
 			throw new BusinessException(ErrorCode.BAD_REQUEST, "빈 파일은 업로드할 수 없습니다.");
 		}
+		validateExtension(file.getOriginalFilename());
 
 		byte[] fileBytes;
 		try {
@@ -78,6 +83,25 @@ public class RagIngestService {
 		return sourceDocument;
 	}
 
+	private void validateExtension(String fileName) {
+		String extension = extensionOf(fileName);
+		if (extension == null || !ALLOWED_EXTENSIONS.contains(extension)) {
+			throw new BusinessException(ErrorCode.AI_UNSUPPORTED_FILE_TYPE,
+					"PDF, DOCX, XLSX, PPTX 파일만 업로드할 수 있습니다.");
+		}
+	}
+
+	private String extensionOf(String fileName) {
+		if (fileName == null) {
+			return null;
+		}
+		int dot = fileName.lastIndexOf('.');
+		if (dot < 0 || dot == fileName.length() - 1) {
+			return null;
+		}
+		return fileName.substring(dot + 1).toLowerCase();
+	}
+
 	private void runPipeline(UUID handoverId, SourceDocument sourceDocument, byte[] fileBytes) {
 		try {
 			List<Document> rawDocuments = extractText(fileBytes, sourceDocument.getFileName());
@@ -89,7 +113,8 @@ public class RagIngestService {
 			attachMetadata(chunks, handoverId, sourceDocument);
 
 			vectorStore.add(chunks);
-			sourceDocumentPersistence.markIndexed(sourceDocument.getId(), extractedText);
+			List<String> chunkIds = chunks.stream().map(Document::getId).toList();
+			sourceDocumentPersistence.markIndexed(sourceDocument.getId(), extractedText, chunkIds);
 		} catch (BusinessException e) {
 			sourceDocumentPersistence.markFailed(sourceDocument.getId());
 			throw e;
@@ -151,6 +176,13 @@ public class RagIngestService {
 	@Transactional
 	public void delete(UUID handoverId, UUID fileId) {
 		SourceDocument sourceDocument = findOwned(handoverId, fileId);
+		if (sourceDocument.getStatus() == SourceDocumentStatus.EXTRACTING) {
+			throw new BusinessException(ErrorCode.AI_SOURCE_DOCUMENT_PROCESSING);
+		}
+
+		if (sourceDocument.getChunkIds() != null && !sourceDocument.getChunkIds().isEmpty()) {
+			vectorStore.delete(sourceDocument.getChunkIds());
+		}
 		s3FileStorage.delete(sourceDocument.getS3Key());
 		sourceDocumentRepository.delete(sourceDocument);
 	}

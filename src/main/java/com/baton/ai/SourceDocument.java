@@ -1,7 +1,11 @@
 package com.baton.ai;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
+
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -58,6 +62,11 @@ public class SourceDocument {
 	@Column(name = "extracted_text")
 	private String extractedText;
 
+	/** vectorStore.add()에서 청크마다 부여된 ID. 파일 삭제 시 이 ID로 벡터스토어에서도 정확히 지운다. */
+	@JdbcTypeCode(SqlTypes.JSON)
+	@Column(name = "chunk_ids")
+	private List<String> chunkIds;
+
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private Instant createdAt;
 
@@ -77,9 +86,10 @@ public class SourceDocument {
 		return new SourceDocument(handoverId, fileName, mimeType, fileSize, s3Key);
 	}
 
-	public void markIndexed(String extractedText) {
+	public void markIndexed(String extractedText, List<String> chunkIds) {
 		this.status = SourceDocumentStatus.INDEXED;
 		this.extractedText = extractedText;
+		this.chunkIds = chunkIds;
 		this.updatedAt = Instant.now();
 	}
 
