@@ -19,12 +19,14 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestPart;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.baton.ai.dto.ChatAnswerResponse;
 import com.baton.ai.dto.ChatQuestionRequest;
+import com.baton.ai.dto.AnalysisJobResponse;
 import com.baton.ai.dto.ClarificationQuestionResponse;
 import com.baton.ai.dto.DownloadedFile;
 import com.baton.ai.dto.FileMetadataResponse;
@@ -33,6 +35,7 @@ import com.baton.ai.dto.ChatMessageResponse;
 import com.baton.ai.dto.HandoverDraftResponse;
 import com.baton.ai.dto.QuestionAnswerRequest;
 import com.baton.ai.dto.UpdateDraftRequest;
+import com.baton.ai.dto.SourceEvidenceResponse;
 import com.baton.auth.AuthService;
 import com.baton.common.BusinessException;
 import com.baton.common.ErrorCode;
@@ -52,9 +55,7 @@ import org.springframework.transaction.annotation.Transactional;
  * 클래스 전체에 @Transactional을 건 이유: Handover.participants가 지연 로딩(LAZY)이라
  * HandoverPermission.requireViewer()가 owner가 아닌 참여자를 검사할 때 그 컬렉션을 읽는다.
  * open-in-view가 꺼져 있어서 트랜잭션 밖에서 읽으면 LazyInitializationException이 난다.
- *
- * TODO: Handover.status를 ANALYZING/ANSWERING/EDITING으로 전이시키는 건 handover 도메인과
- * 상태 전이 방식을 맞춰야 해서 별도로 처리한다. 지금은 requireOwner까지만 검사한다.
+ * 분석 작업은 AnalysisJobService가 Handover 상태와 함께 전이한다.
  */
 @RestController
 @RequestMapping("/api/v1/handovers/{handoverId}")
@@ -65,6 +66,7 @@ public class RagController {
 	private final RagIngestService ragIngestService;
 	private final RagQueryService ragQueryService;
 	private final RagAnalysisService ragAnalysisService;
+	private final AnalysisJobService analysisJobService;
 	private final HandoverRepository handoverRepository;
 	private final HandoverPermission handoverPermission;
 	private final AuthService authService;
@@ -153,11 +155,29 @@ public class RagController {
 
 	@Operation(summary = "AI 인수인계 초안 생성", description = "업로드된 문서를 분석해 구조화된 초안과 확인 질문을 생성한다. 인계자만 가능.")
 	@PostMapping("/analysis")
-	public HandoverDraftResponse analyze(@PathVariable UUID handoverId, Authentication authentication) {
+	@ResponseStatus(HttpStatus.ACCEPTED)
+	public AnalysisJobResponse analyze(@PathVariable UUID handoverId, Authentication authentication) {
 		Handover handover = loadHandover(handoverId);
 		handoverPermission.requireOwner(handover, currentUserId(authentication));
 
-		return ragAnalysisService.analyze(handoverId);
+		return analysisJobService.start(handoverId, false);
+	}
+
+	@Operation(summary = "AI 분석 작업 상태 조회", description = "가장 최근 분석 작업의 상태와 진행률을 조회한다. 인계자만 가능.")
+	@GetMapping("/analysis")
+	public AnalysisJobResponse getAnalysis(@PathVariable UUID handoverId, Authentication authentication) {
+		Handover handover = loadHandover(handoverId);
+		handoverPermission.requireOwner(handover, currentUserId(authentication));
+		return analysisJobService.getLatest(handoverId);
+	}
+
+	@Operation(summary = "AI 분석 작업 재시도", description = "가장 최근 작업이 실패한 경우 새 분석 작업을 생성한다. 인계자만 가능.")
+	@PostMapping("/analysis/retry")
+	@ResponseStatus(HttpStatus.ACCEPTED)
+	public AnalysisJobResponse retryAnalysis(@PathVariable UUID handoverId, Authentication authentication) {
+		Handover handover = loadHandover(handoverId);
+		handoverPermission.requireOwner(handover, currentUserId(authentication));
+		return analysisJobService.start(handoverId, true);
 	}
 
 	@Operation(summary = "인수인계 초안 조회", description = "참여자(인계자/인수자/관리자) 모두 가능.")
@@ -209,11 +229,14 @@ public class RagController {
 
 	@Operation(summary = "AI 확인 질문 목록 조회", description = "인계자만 가능.")
 	@GetMapping("/questions")
-	public List<ClarificationQuestionResponse> getQuestions(@PathVariable UUID handoverId, Authentication authentication) {
+	public List<ClarificationQuestionResponse> getQuestions(
+			@PathVariable UUID handoverId,
+			@RequestParam(required = false) ClarificationQuestionType type,
+			Authentication authentication) {
 		Handover handover = loadHandover(handoverId);
 		handoverPermission.requireOwner(handover, currentUserId(authentication));
 
-		return ragAnalysisService.getQuestions(handoverId);
+		return ragAnalysisService.getQuestions(handoverId, type);
 	}
 
 	@Operation(summary = "AI 확인 질문에 답변", description = "선택/직접 입력 답변을 저장하거나 건너뛴다. 인계자만 가능.")
@@ -221,7 +244,7 @@ public class RagController {
 	public ClarificationQuestionResponse answerQuestion(
 			@PathVariable UUID handoverId,
 			@PathVariable UUID questionId,
-			@RequestBody QuestionAnswerRequest request,
+			@Valid @RequestBody QuestionAnswerRequest request,
 			Authentication authentication) {
 		Handover handover = loadHandover(handoverId);
 		handoverPermission.requireOwner(handover, currentUserId(authentication));
@@ -236,6 +259,17 @@ public class RagController {
 		handoverPermission.requireOwner(handover, currentUserId(authentication));
 
 		return ragAnalysisService.completeQuestions(handoverId);
+	}
+
+	@Operation(summary = "AI 원문 근거 목록", description = "AI 분석과 답변에 사용되는 원문 목록과 접근 경로를 조회한다.")
+	@GetMapping("/sources")
+	public List<SourceEvidenceResponse> getSources(@PathVariable UUID handoverId, Authentication authentication) {
+		Handover handover = loadHandover(handoverId);
+		handoverPermission.requireViewer(handover, currentUserId(authentication));
+
+		return ragIngestService.listByHandover(handoverId).stream()
+				.map(source -> SourceEvidenceResponse.from(handoverId, source))
+				.toList();
 	}
 
 	private Handover loadHandover(UUID handoverId) {

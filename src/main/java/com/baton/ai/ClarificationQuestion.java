@@ -47,6 +47,14 @@ public class ClarificationQuestion {
 	@Column(name = "reason")
 	private String reason;
 
+	@Enumerated(EnumType.STRING)
+	@Column(nullable = false, length = 20, columnDefinition = "varchar(20) default 'INTERVIEW'")
+	private ClarificationQuestionType type;
+
+	@Lob
+	@Column(name = "evidence")
+	private String evidence;
+
 	@JdbcTypeCode(SqlTypes.JSON)
 	@Column(nullable = false)
 	private List<QuestionOption> options;
@@ -62,24 +70,32 @@ public class ClarificationQuestion {
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private Instant createdAt;
 
-	private ClarificationQuestion(UUID handoverId, String questionText, String reason, List<QuestionOption> options) {
+	private ClarificationQuestion(UUID handoverId, ClarificationQuestionType type, String questionText,
+			String reason, String evidence, List<QuestionOption> options) {
 		this.handoverId = handoverId;
+		this.type = type == null ? ClarificationQuestionType.INTERVIEW : type;
 		this.questionText = questionText;
 		this.reason = reason;
+		this.evidence = evidence;
 		this.options = options;
 		this.status = ClarificationQuestionStatus.PENDING;
 	}
 
-	public static ClarificationQuestion create(UUID handoverId, String questionText, String reason, List<QuestionOption> options) {
-		return new ClarificationQuestion(handoverId, questionText, reason, options);
+	public static ClarificationQuestion create(UUID handoverId, ClarificationQuestionType type, String questionText,
+			String reason, String evidence, List<QuestionOption> options) {
+		return new ClarificationQuestion(handoverId, type, questionText, reason, evidence, options);
 	}
 
 	public void answer(String answer) {
+		if (answer == null || answer.isBlank()) {
+			throw new IllegalArgumentException("답변은 비어 있을 수 없습니다.");
+		}
 		this.answer = answer;
 		this.status = ClarificationQuestionStatus.ANSWERED;
 	}
 
 	public void skip() {
+		this.answer = null;
 		this.status = ClarificationQuestionStatus.SKIPPED;
 	}
 
