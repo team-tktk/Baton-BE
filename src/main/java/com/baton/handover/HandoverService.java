@@ -52,6 +52,7 @@ public class HandoverService {
 	public HandoverResponse create(UUID ownerId, CreateHandoverRequest req) {
 		Handover handover = Handover.create(ownerId, resolveTitle(req.title(), req.workScopes()));
 
+		validateParticipants(ownerId, req.recipientIds(), req.reviewerIds());
 		applyRecipients(handover, req.recipientIds());
 		applyReviewers(handover, req.reviewerIds());
 		applyWorkScopes(handover, req.workScopes());
@@ -134,6 +135,10 @@ public class HandoverService {
 		if (req.title() != null && !req.title().isBlank()) {
 			handover.rename(req.title());
 		}
+		// 인수자/관리자 지정 규칙 검증 — 넘어오지 않은 쪽은 기존 참여자 기준으로 함께 검사한다.
+		validateParticipants(handover.getOwnerId(),
+				req.recipientIds() != null ? req.recipientIds() : currentParticipantIds(handover, ParticipantRole.RECIPIENT),
+				req.reviewerIds() != null ? req.reviewerIds() : currentParticipantIds(handover, ParticipantRole.REVIEWER));
 		if (req.recipientIds() != null) {
 			validateUsersExist(req.recipientIds());
 			handover.replaceRecipients(req.recipientIds());
@@ -352,5 +357,32 @@ public class HandoverService {
 						"존재하지 않는 사용자입니다: " + userId);
 			}
 		}
+	}
+
+	/**
+	 * 참여자 지정 규칙 검증(모두 400, code=HANDOVER_INVALID_PARTICIPANT):
+	 * 1) 인계자(owner) 본인은 인수자/관리자로 지정할 수 없다.
+	 * 2) 같은 사람을 인수자이자 관리자로 동시에 지정할 수 없다(자기가 받은 걸 자기가 승인 방지).
+	 */
+	private void validateParticipants(UUID ownerId, List<UUID> recipientIds, List<UUID> reviewerIds) {
+		if (recipientIds != null && recipientIds.contains(ownerId)) {
+			throw new BusinessException(ErrorCode.HANDOVER_INVALID_PARTICIPANT, "본인을 인수자로 지정할 수 없습니다.");
+		}
+		if (reviewerIds != null && reviewerIds.contains(ownerId)) {
+			throw new BusinessException(ErrorCode.HANDOVER_INVALID_PARTICIPANT, "본인을 관리자로 지정할 수 없습니다.");
+		}
+		if (recipientIds != null && reviewerIds != null
+				&& recipientIds.stream().anyMatch(reviewerIds::contains)) {
+			throw new BusinessException(ErrorCode.HANDOVER_INVALID_PARTICIPANT,
+					"같은 사람을 인수자와 관리자로 동시에 지정할 수 없습니다.");
+		}
+	}
+
+	/** 현재 인수인계의 특정 역할 참여자 userId 목록(update에서 넘어오지 않은 쪽 검증용). */
+	private List<UUID> currentParticipantIds(Handover handover, ParticipantRole role) {
+		return handover.getParticipants().stream()
+				.filter(p -> p.getRole() == role)
+				.map(HandoverParticipant::getUserId)
+				.toList();
 	}
 }
