@@ -61,6 +61,9 @@ springdoc:
     operations-sorter: alpha
     tags-sorter: alpha
     display-request-duration: true
+    # Swagger UI가 XSRF-TOKEN 쿠키를 읽어 X-XSRF-TOKEN 헤더로 자동 첨부 → CSRF 켜진 채로 POST 테스트 가능
+    csrf:
+      enabled: true
   api-docs:
     path: /v3/api-docs
   default-produces-media-type: application/json
@@ -84,7 +87,7 @@ logging:
 # 운영에선 환경변수 APP_CORS_ALLOWEDORIGINS 로 덮어쓸 수 있다.
 app:
   cors:
-    allowed-origins: http://localhost:3000,http://localhost:5173,https://baton-fe.vercel.app,https://baton-fe-*.vercel.app
+    allowed-origins: http://localhost:3000,http://localhost:5173,https://baton-fe.vercel.app,https://baton-fe-*.vercel.app,https://d1rk2gzucjdf8h.cloudfront.net
   s3:
     bucket: ${S3_BUCKET}
     region: ${S3_REGION:ap-northeast-2}
