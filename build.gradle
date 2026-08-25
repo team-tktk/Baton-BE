@@ -61,8 +61,12 @@ dependencies {
 	// implementation 'org.springframework.ai:spring-ai-starter-vector-store-pgvector'
 	// implementation 'org.springframework.ai:spring-ai-starter-model-openai'
 
-	// ── 로그인/인증 붙일 때 ─────────────────────────────────
-	// implementation 'org.springframework.boot:spring-boot-starter-security'
+	// ── 로그인/인증 (HTTP-only 쿠키 세션) ──────────────────
+	implementation 'org.springframework.boot:spring-boot-starter-security'
+	// 세션을 PostgreSQL에 저장 → 서버 재시작/다중 인스턴스에도 로그인 유지
+	implementation 'org.springframework.session:spring-session-jdbc'
+	// Boot 4는 자동설정이 기술별 모듈로 쪼개짐. 이 모듈이 있어야 세션 자동설정(SPRING_SESSION 저장)이 켜진다.
+	implementation 'org.springframework.boot:spring-boot-session'
 
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'

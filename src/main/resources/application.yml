@@ -19,6 +19,14 @@ spring:
     username: baton
     password: ${DB_PASSWORD:1234}
 
+  # ── 세션(로그인 유지) ──────────────────────────────────
+  # 세션 저장소(JDBC)와 만료(7일)는 SessionConfig의 @EnableJdbcHttpSession에서 관리한다.
+  # (Boot 4는 세션 스토어 자동설정이 없어 store-type/timeout 프로퍼티가 무시되기 때문)
+  # always = SPRING_SESSION 테이블이 없으면 시작 시 생성(개발 편의). SessionConfig가 이 값을 읽는다.
+  session:
+    jdbc:
+      initialize-schema: always
+
   jpa:
     hibernate:
       ddl-auto: update       # 개발 중에만. 운영은 validate 또는 none
@@ -55,6 +63,13 @@ springdoc:
 
 server:
   port: 8080
+  servlet:
+    session:
+      cookie:
+        name: BATON_SESSION
+        http-only: true        # JS에서 접근 불가 → XSS로 세션 탈취 방지
+        same-site: lax         # 교차 사이트 요청엔 쿠키 미전송 → CSRF 기본 방어
+        # secure: true 는 HTTPS 전용이라 운영 프로파일(application-prod.yml)에서만 켠다
 
 logging:
   level:
