@@ -48,6 +48,10 @@ public class HandoverDraft {
 	@Column(name = "updated_at", nullable = false)
 	private Instant updatedAt;
 
+	/** 인수자용 첫날 요약(자연어). content가 바뀔 때마다 무효화되고, 조회 시점에 없으면 다시 생성한다. */
+	@Column(name = "briefing_summary", columnDefinition = "TEXT")
+	private String briefingSummary;
+
 	private HandoverDraft(UUID handoverId, HandoverDraftContent content) {
 		this.handoverId = handoverId;
 		this.content = content;
@@ -59,6 +63,11 @@ public class HandoverDraft {
 
 	public void replaceContent(HandoverDraftContent content) {
 		this.content = content;
+		this.briefingSummary = null;
+	}
+
+	public void cacheBriefingSummary(String briefingSummary) {
+		this.briefingSummary = briefingSummary;
 	}
 
 	@PrePersist

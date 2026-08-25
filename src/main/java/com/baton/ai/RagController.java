@@ -1,6 +1,7 @@
 package com.baton.ai;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -25,6 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.baton.ai.dto.ChatAnswerResponse;
+import com.baton.ai.dto.ChatMessagePageResponse;
 import com.baton.ai.dto.ChatQuestionRequest;
 import com.baton.ai.dto.AnalysisJobResponse;
 import com.baton.ai.dto.ClarificationQuestionResponse;
@@ -32,6 +34,7 @@ import com.baton.ai.dto.DownloadedFile;
 import com.baton.ai.dto.FileMetadataResponse;
 import com.baton.ai.dto.FileUploadResponse;
 import com.baton.ai.dto.ChatMessageResponse;
+import com.baton.ai.dto.HandoverBriefingResponse;
 import com.baton.ai.dto.HandoverDraftResponse;
 import com.baton.ai.dto.QuestionAnswerRequest;
 import com.baton.ai.dto.UpdateDraftRequest;
@@ -170,13 +173,18 @@ public class RagController {
 		return ragQueryService.answer(handoverId, userId, request.question());
 	}
 
-	@Operation(summary = "AI 대화 이력 조회", description = "참여자(인계자/인수자/관리자) 모두 가능.")
+	@Operation(summary = "AI 대화 이력 조회", description = "참여자(인계자/인수자/관리자) 모두 가능. cursor는 이전 응답의 nextCursor(ISO-8601)를 그대로 전달.")
 	@GetMapping("/chat/messages")
-	public List<ChatMessageResponse> listMessages(@PathVariable UUID handoverId, Authentication authentication) {
+	public ChatMessagePageResponse listMessages(
+			@PathVariable UUID handoverId,
+			@RequestParam(required = false) String cursor,
+			@RequestParam(required = false, defaultValue = "20") int size,
+			Authentication authentication) {
 		Handover handover = loadHandover(handoverId);
 		handoverPermission.requireViewer(handover, currentUserId(authentication));
 
-		return ragQueryService.listMessages(handoverId);
+		Instant cursorInstant = (cursor == null || cursor.isBlank()) ? null : Instant.parse(cursor);
+		return ragQueryService.listMessages(handoverId, cursorInstant, size);
 	}
 
 	@Operation(summary = "AI 인수인계 초안 생성", description = "업로드된 문서를 분석해 구조화된 초안과 확인 질문을 생성한다. 인계자만 가능.")
@@ -227,13 +235,13 @@ public class RagController {
 		return ragAnalysisService.updateDraft(handoverId, request.content());
 	}
 
-	@Operation(summary = "인수자 첫날 요약", description = "AI 초안과 같은 내용을 인수자 관점 요약 화면용으로 제공한다. 참여자 모두 가능.")
+	@Operation(summary = "인수자 첫날 요약", description = "AI가 초안을 바탕으로 쓴 환영 브리핑과, 당장 필요한 항목(체크리스트/접근권한/관계자)만 추려서 제공한다. 참여자 모두 가능.")
 	@GetMapping("/briefing")
-	public HandoverDraftResponse getBriefing(@PathVariable UUID handoverId, Authentication authentication) {
+	public HandoverBriefingResponse getBriefing(@PathVariable UUID handoverId, Authentication authentication) {
 		Handover handover = loadHandover(handoverId);
 		handoverPermission.requireViewer(handover, currentUserId(authentication));
 
-		return ragAnalysisService.getDraft(handoverId);
+		return ragAnalysisService.getBriefing(handoverId);
 	}
 
 	@Operation(summary = "인수인계 문서 Markdown 내보내기", description = "참여자(인계자/인수자/관리자) 모두 가능.")

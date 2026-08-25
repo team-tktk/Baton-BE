@@ -1,5 +1,6 @@
 package com.baton.ai;
 
+import java.util.List;
 import java.util.UUID;
 
 import org.springframework.stereotype.Component;
@@ -29,10 +30,10 @@ public class SourceDocumentPersistence {
 	}
 
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
-	public void markIndexed(UUID sourceDocumentId, String extractedText) {
+	public void markIndexed(UUID sourceDocumentId, String extractedText, List<String> chunkIds) {
 		sourceDocumentRepository.findById(sourceDocumentId)
 				.ifPresent(doc -> {
-					doc.markIndexed(extractedText);
+					doc.markIndexed(extractedText, chunkIds);
 					sourceDocumentRepository.save(doc);
 				});
 	}
