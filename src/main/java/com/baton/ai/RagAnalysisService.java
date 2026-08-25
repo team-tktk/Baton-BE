@@ -10,6 +10,7 @@ import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.prompt.SystemPromptTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import com.baton.ai.dto.AnalysisResult;
 import com.baton.ai.dto.ClarificationQuestionResponse;
@@ -18,6 +19,8 @@ import com.baton.ai.dto.HandoverDraftResponse;
 import com.baton.ai.dto.QuestionAnswerRequest;
 import com.baton.common.BusinessException;
 import com.baton.common.ErrorCode;
+import com.baton.handover.Handover;
+import com.baton.handover.HandoverRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import lombok.RequiredArgsConstructor;
@@ -37,37 +40,39 @@ public class RagAnalysisService {
 	private final ClarificationQuestionRepository clarificationQuestionRepository;
 	private final ChatClient chatClient;
 	private final ObjectMapper objectMapper;
+	private final TransactionTemplate transactionTemplate;
+	private final HandoverRepository handoverRepository;
 
-	@Transactional
-	public HandoverDraftResponse analyze(UUID handoverId) {
-		List<SourceDocument> documents = sourceDocumentRepository.findAllByHandoverId(handoverId).stream()
-				.filter(document -> document.getStatus() == SourceDocumentStatus.INDEXED)
-				.toList();
-
-		if (documents.isEmpty()) {
-			throw new BusinessException(ErrorCode.AI_NO_DOCUMENTS);
-		}
-
-		String combinedText = documents.stream()
-				.map(document -> "### " + document.getFileName() + "\n" + document.getExtractedText())
-				.collect(Collectors.joining("\n\n"));
-
+	/** 외부 AI 호출은 DB 트랜잭션 밖에서 수행하고, 입력 조회와 결과 저장만 짧게 트랜잭션으로 묶는다. */
+	public AnalysisExecutionResult analyze(UUID handoverId) {
+		String combinedText = transactionTemplate.execute(status -> loadCombinedText(handoverId));
 		AnalysisResult result = generateAnalysis(combinedText);
 
-		HandoverDraft draft = handoverDraftRepository.findByHandoverId(handoverId)
-				.orElseGet(() -> HandoverDraft.create(handoverId, result.draft()));
-		draft.replaceContent(result.draft());
-		handoverDraftRepository.save(draft);
+		if (result == null || result.draft() == null) {
+			throw new BusinessException(ErrorCode.INTERNAL_ERROR, "AI가 유효한 초안을 반환하지 않았습니다.");
+		}
 
-		clarificationQuestionRepository.deleteAllByHandoverId(handoverId);
-		List<ClarificationQuestion> questions = result.questions().stream()
-				.map(q -> ClarificationQuestion.create(handoverId, q.questionText(), q.reason(), q.options()))
-				.toList();
-		clarificationQuestionRepository.saveAll(questions);
+		List<com.baton.ai.dto.GeneratedQuestion> generatedQuestions =
+				result.questions() == null ? List.of() : result.questions();
 
-		return HandoverDraftResponse.from(draft);
+		return transactionTemplate.execute(status -> {
+			HandoverDraft draft = handoverDraftRepository.findByHandoverId(handoverId)
+					.orElseGet(() -> HandoverDraft.create(handoverId, result.draft()));
+			draft.replaceContent(result.draft());
+			handoverDraftRepository.save(draft);
+
+			clarificationQuestionRepository.deleteAllByHandoverId(handoverId);
+			List<ClarificationQuestion> questions = generatedQuestions.stream()
+					.map(q -> ClarificationQuestion.create(
+							handoverId, q.type(), q.questionText(), q.reason(), q.evidence(), q.options()))
+					.toList();
+			clarificationQuestionRepository.saveAll(questions);
+
+			return new AnalysisExecutionResult(HandoverDraftResponse.from(draft), questions.size());
+		});
 	}
 
+	@Transactional(readOnly = true)
 	public HandoverDraftResponse getDraft(UUID handoverId) {
 		HandoverDraft draft = handoverDraftRepository.findByHandoverId(handoverId)
 				.orElseThrow(() -> new BusinessException(ErrorCode.AI_DRAFT_NOT_FOUND));
@@ -83,8 +88,12 @@ public class RagAnalysisService {
 		return HandoverDraftResponse.from(draft);
 	}
 
-	public List<ClarificationQuestionResponse> getQuestions(UUID handoverId) {
-		return clarificationQuestionRepository.findAllByHandoverId(handoverId).stream()
+	@Transactional(readOnly = true)
+	public List<ClarificationQuestionResponse> getQuestions(UUID handoverId, ClarificationQuestionType type) {
+		List<ClarificationQuestion> questions = type == null
+				? clarificationQuestionRepository.findAllByHandoverId(handoverId)
+				: clarificationQuestionRepository.findAllByHandoverIdAndType(handoverId, type);
+		return questions.stream()
 				.map(ClarificationQuestionResponse::from)
 				.toList();
 	}
@@ -104,28 +113,68 @@ public class RagAnalysisService {
 		return ClarificationQuestionResponse.from(question);
 	}
 
-	/** 답변된 질문 내용을 반영해 초안을 다시 만든다. 답변된 질문이 없으면 기존 초안을 그대로 반환한다. */
-	@Transactional
+	/** 모든 질문이 답변/건너뛰기 상태인지 확인한 뒤, 답변 내용을 초안에 반영한다. */
 	public HandoverDraftResponse completeQuestions(UUID handoverId) {
-		HandoverDraft draft = handoverDraftRepository.findByHandoverId(handoverId)
-				.orElseThrow(() -> new BusinessException(ErrorCode.AI_DRAFT_NOT_FOUND));
+		CompletionInput input = transactionTemplate.execute(status -> loadCompletionInput(handoverId));
 
-		List<ClarificationQuestion> answered = clarificationQuestionRepository.findAllByHandoverId(handoverId).stream()
-				.filter(q -> q.getStatus() == ClarificationQuestionStatus.ANSWERED)
-				.toList();
-
-		if (answered.isEmpty()) {
-			return HandoverDraftResponse.from(draft);
+		if (!input.hasAnswers()) {
+			return transactionTemplate.execute(status -> finishQuestionsWithoutRegeneration(handoverId));
 		}
 
+		HandoverDraftContent updated = regenerateDraft(input.currentDraft(), input.qnaText());
+		return transactionTemplate.execute(status -> {
+			HandoverDraft draft = handoverDraftRepository.findByHandoverId(handoverId)
+					.orElseThrow(() -> new BusinessException(ErrorCode.AI_DRAFT_NOT_FOUND));
+			draft.replaceContent(updated);
+			loadHandover(handoverId).markQuestionsCompleted();
+			return HandoverDraftResponse.from(draft);
+		});
+	}
+
+	private String loadCombinedText(UUID handoverId) {
+		List<SourceDocument> documents = sourceDocumentRepository.findAllByHandoverId(handoverId).stream()
+				.filter(document -> document.getStatus() == SourceDocumentStatus.INDEXED)
+				.toList();
+
+		if (documents.isEmpty()) {
+			throw new BusinessException(ErrorCode.AI_NO_DOCUMENTS);
+		}
+
+		return documents.stream()
+				.map(document -> "### " + document.getFileName() + "\n" + document.getExtractedText())
+				.collect(Collectors.joining("\n\n"));
+	}
+
+	private CompletionInput loadCompletionInput(UUID handoverId) {
+		HandoverDraft draft = handoverDraftRepository.findByHandoverId(handoverId)
+				.orElseThrow(() -> new BusinessException(ErrorCode.AI_DRAFT_NOT_FOUND));
+		List<ClarificationQuestion> questions = clarificationQuestionRepository.findAllByHandoverId(handoverId);
+
+		boolean hasPending = questions.stream()
+				.anyMatch(q -> q.getStatus() == ClarificationQuestionStatus.PENDING);
+		if (hasPending) {
+			throw new BusinessException(ErrorCode.AI_QUESTIONS_INCOMPLETE);
+		}
+
+		List<ClarificationQuestion> answered = questions.stream()
+				.filter(q -> q.getStatus() == ClarificationQuestionStatus.ANSWERED)
+				.toList();
 		String qnaText = answered.stream()
 				.map(q -> "Q: " + q.getQuestionText() + "\nA: " + q.getAnswer())
 				.collect(Collectors.joining("\n\n"));
+		return new CompletionInput(draft.getContent(), qnaText, !answered.isEmpty());
+	}
 
-		HandoverDraftContent updated = regenerateDraft(draft.getContent(), qnaText);
-		draft.replaceContent(updated);
-
+	private HandoverDraftResponse finishQuestionsWithoutRegeneration(UUID handoverId) {
+		HandoverDraft draft = handoverDraftRepository.findByHandoverId(handoverId)
+				.orElseThrow(() -> new BusinessException(ErrorCode.AI_DRAFT_NOT_FOUND));
+		loadHandover(handoverId).markQuestionsCompleted();
 		return HandoverDraftResponse.from(draft);
+	}
+
+	private Handover loadHandover(UUID handoverId) {
+		return handoverRepository.findById(handoverId)
+				.orElseThrow(() -> new BusinessException(ErrorCode.HANDOVER_NOT_FOUND));
 	}
 
 	private AnalysisResult generateAnalysis(String documentsText) {
@@ -205,5 +254,11 @@ public class RagAnalysisService {
 
 	private String nullToDash(String value) {
 		return (value == null || value.isBlank()) ? "-" : value;
+	}
+
+	public record AnalysisExecutionResult(HandoverDraftResponse draft, int questionCount) {
+	}
+
+	private record CompletionInput(HandoverDraftContent currentDraft, String qnaText, boolean hasAnswers) {
 	}
 }
