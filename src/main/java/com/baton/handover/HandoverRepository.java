@@ -1,10 +1,13 @@
 package com.baton.handover;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -18,6 +21,11 @@ import org.springframework.data.repository.query.Param;
  * 목록은 id 키셋 커서 페이지네이션(정렬 id ASC 고정)으로 일관성을 보장한다.
  */
 public interface HandoverRepository extends JpaRepository<Handover, UUID> {
+
+	/** 분석 작업 중복 생성을 막기 위해 해당 인수인계 행을 쓰기 잠금으로 읽는다. */
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("SELECT h FROM Handover h WHERE h.id = :handoverId")
+	Optional<Handover> findByIdForUpdate(@Param("handoverId") UUID handoverId);
 
 	/** 인계자(owner)가 보낸 목록. status가 null이면 전체, cursor가 null이면 처음부터. */
 	@Query("""

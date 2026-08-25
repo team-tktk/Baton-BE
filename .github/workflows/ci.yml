@@ -25,3 +25,12 @@ jobs:
       # DB/OpenAI 없이도 되는 범위만 검증한다. 실제 기동 확인은 로컬/서버에서 직접 한다.
       - name: Compile
         run: ./gradlew compileJava compileTestJava --no-daemon
+
+      - name: AI analysis unit tests
+        run: >-
+          ./gradlew test
+          --tests 'com.baton.ai.AnalysisJobTest'
+          --tests 'com.baton.ai.AnalysisJobServiceTest'
+          --tests 'com.baton.ai.dto.QuestionAnswerRequestTest'
+          --tests 'com.baton.handover.HandoverAnalysisStateTest'
+          --no-daemon
