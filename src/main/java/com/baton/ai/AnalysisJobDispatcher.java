@@ -21,13 +21,12 @@ public class AnalysisJobDispatcher {
 	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
 	public void dispatch(AnalysisJobRequested event) {
 		try {
-			analysisJobService.updateProgress(event.jobId(), AnalysisJobStatus.PARSING, 10, "업로드 문서 확인 중");
-			analysisJobService.updateProgress(event.jobId(), AnalysisJobStatus.INDEXING, 30, "인덱싱 상태 확인 중");
-			analysisJobService.updateProgress(event.jobId(), AnalysisJobStatus.GENERATING_QUESTIONS, 55, "보완 질문 생성 중");
+			analysisJobService.updateProgress(event.jobId(), AnalysisJobStatus.PARSING, 20, "업로드 문서 확인 중");
+			analysisJobService.updateProgress(event.jobId(), AnalysisJobStatus.GENERATING_QUESTIONS, 60, "확인 질문 생성 중");
 
+			// 분석 단계는 질문만 생성한다(빠름). 초안은 답변 후 completeQuestions에서 페이지 병렬로 만든다.
 			RagAnalysisService.AnalysisExecutionResult result = ragAnalysisService.analyze(event.handoverId());
 
-			analysisJobService.updateProgress(event.jobId(), AnalysisJobStatus.GENERATING_DRAFT, 90, "인수인계 초안 저장 중");
 			analysisJobService.complete(event.jobId(), event.handoverId(), result.questionCount() > 0);
 		} catch (Exception e) {
 			log.error("[*] Analysis job failed: jobId={}, handoverId={}", event.jobId(), event.handoverId(), e);
