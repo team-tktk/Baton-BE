@@ -1,0 +1,89 @@
+spring:
+  application:
+    name: baton
+
+  # Java 21 가상 스레드 — 동시 요청 처리량 향상.
+  # 혹시 이상 동작하면 false로 되돌리면 됨.
+  threads:
+    virtual:
+      enabled: true
+
+  # 파일 업로드 한도 (RAG 문서 업로드용). 기본값 1MB라 금방 막힘.
+  # 프론트 안내(50MB) 기준으로 통일.
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/baton
+    username: baton
+    password: ${DB_PASSWORD:1234}
+
+  # ── 세션(로그인 유지) ──────────────────────────────────
+  # 세션 저장소(JDBC)와 만료(7일)는 SessionConfig의 @EnableJdbcHttpSession에서 관리한다.
+  # (Boot 4는 세션 스토어 자동설정이 없어 store-type/timeout 프로퍼티가 무시되기 때문)
+  # always = SPRING_SESSION 테이블이 없으면 시작 시 생성(개발 편의). SessionConfig가 이 값을 읽는다.
+  session:
+    jdbc:
+      initialize-schema: always
+
+  jpa:
+    hibernate:
+      ddl-auto: update       # 개발 중에만. 운영은 validate 또는 none
+    show-sql: true
+    open-in-view: false      # 커넥션 오래 잡는 것 방지 (권장)
+    properties:
+      hibernate:
+        format_sql: true
+        default_batch_fetch_size: 100
+
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY}
+      embedding:
+        options:
+          model: text-embedding-3-small   # 1536차원
+      chat:
+        options:
+          model: gpt-4o-mini
+          temperature: 0.3                # 근거 기반 답변이라 낮게
+    vectorstore:
+      pgvector:
+        initialize-schema: true           # vector_store 테이블 자동 생성 (개발용)
+        index-type: HNSW
+        distance-type: COSINE_DISTANCE
+        dimensions: 1536                  # 임베딩 모델 차원과 반드시 일치
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html      # http://localhost:8080/swagger-ui.html
+    operations-sorter: alpha
+    tags-sorter: alpha
+    display-request-duration: true
+  api-docs:
+    path: /v3/api-docs
+  default-produces-media-type: application/json
+
+server:
+  port: 8080
+  servlet:
+    session:
+      cookie:
+        name: BATON_SESSION
+        http-only: true        # JS에서 접근 불가 → XSS로 세션 탈취 방지
+        same-site: lax         # 교차 사이트 요청엔 쿠키 미전송 → CSRF 기본 방어
+        # secure: true 는 HTTPS 전용이라 운영 프로파일(application-prod.yml)에서만 켠다
+
+logging:
+  level:
+    com.baton: debug
+    org.hibernate.orm.jdbc.bind: trace   # SQL에 들어간 실제 파라미터 값까지 로그로
+
+# 프론트 주소. 배포 시 실제 도메인 추가.
+app:
+  cors:
+    allowed-origins: http://localhost:3000,http://localhost:5173
+  s3:
+    bucket: ${S3_BUCKET}
+    region: ${S3_REGION:ap-northeast-2}

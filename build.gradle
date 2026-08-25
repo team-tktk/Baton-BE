@@ -1,0 +1,82 @@
+plugins {
+	id 'java'
+	id 'org.springframework.boot' version '4.1.1'
+	id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'com.baton'
+version = '0.0.1-SNAPSHOT'
+description = 'Baton Backend'
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(21)
+	}
+}
+
+configurations {
+	compileOnly {
+		extendsFrom annotationProcessor
+	}
+}
+
+repositories {
+	mavenCentral()
+}
+
+ext {
+	// Spring AI 2.x = Spring Boot 4.x 전용. 1.x는 Boot 3용이라 물리면 깨짐.
+	springAiVersion = '2.0.1'
+	awsSdkVersion = '2.29.52'
+}
+
+dependencyManagement {
+	imports {
+		mavenBom "org.springframework.ai:spring-ai-bom:${springAiVersion}"
+		mavenBom "software.amazon.awssdk:bom:${awsSdkVersion}"
+	}
+}
+
+dependencies {
+	// 웹(REST API)
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+	// 요청 값 검증 — @Valid, @NotNull
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+
+	// DB — PostgreSQL + JPA
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+	runtimeOnly 'org.postgresql:postgresql'
+
+	// 롬복
+	compileOnly 'org.projectlombok:lombok'
+	annotationProcessor 'org.projectlombok:lombok'
+
+	// API 문서 (Swagger UI) — Boot 4는 springdoc 3.x. 2.x는 Boot 3 전용이라 물리면 깨짐.
+	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.0'
+
+	// 코드 고치면 자동 재시작
+	developmentOnly 'org.springframework.boot:spring-boot-devtools'
+
+	// ── RAG ────────────────────────────────────────────────
+	implementation 'org.springframework.ai:spring-ai-starter-vector-store-pgvector'
+	implementation 'org.springframework.ai:spring-ai-starter-model-openai'
+	// PDF/DOCX/XLSX/PPTX 등 여러 포맷을 하나의 리더로 파싱
+	implementation 'org.springframework.ai:spring-ai-tika-document-reader'
+
+	// 원본 파일 저장 — EC2에 붙인 IAM 역할로 인증(코드에 키 없음)
+	implementation 'software.amazon.awssdk:s3'
+
+	// ── 로그인/인증 (HTTP-only 쿠키 세션) ──────────────────
+	implementation 'org.springframework.boot:spring-boot-starter-security'
+	// 세션을 PostgreSQL에 저장 → 서버 재시작/다중 인스턴스에도 로그인 유지
+	implementation 'org.springframework.session:spring-session-jdbc'
+	// Boot 4는 자동설정이 기술별 모듈로 쪼개짐. 이 모듈이 있어야 세션 자동설정(SPRING_SESSION 저장)이 켜진다.
+	implementation 'org.springframework.boot:spring-boot-session'
+
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+}
