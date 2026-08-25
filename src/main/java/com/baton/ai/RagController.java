@@ -40,10 +40,15 @@ import com.baton.handover.HandoverRepository;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 인증만 확인하고 소유권/열람권은 확인 안 하던 상태를 HandoverPermission으로 막는다.
  * 업로드/분석/질문 관리는 인계자(owner) 전용, 조회와 Q&A는 참여자(owner/recipient/reviewer) 전체 허용.
+ *
+ * 클래스 전체에 @Transactional을 건 이유: Handover.participants가 지연 로딩(LAZY)이라
+ * HandoverPermission.requireViewer()가 owner가 아닌 참여자를 검사할 때 그 컬렉션을 읽는다.
+ * open-in-view가 꺼져 있어서 트랜잭션 밖에서 읽으면 LazyInitializationException이 난다.
  *
  * TODO: Handover.status를 ANALYZING/ANSWERING/EDITING으로 전이시키는 건 handover 도메인과
  * 상태 전이 방식을 맞춰야 해서 별도로 처리한다. 지금은 requireOwner까지만 검사한다.
@@ -51,6 +56,7 @@ import lombok.RequiredArgsConstructor;
 @RestController
 @RequestMapping("/api/v1/handovers/{handoverId}")
 @RequiredArgsConstructor
+@Transactional
 public class RagController {
 
 	private final RagIngestService ragIngestService;
