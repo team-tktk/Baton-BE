@@ -16,6 +16,21 @@ final class RagPrompts {
 			---------------------
 			""";
 
+	static final String NO_FABRICATION_RULE = """
+			절대 규칙 — 자료에 없는 내용을 지어내는 것은 엄격히 금지됩니다:
+			- "주요 관계자(stakeholders)"는 원문에 이름이 글자 그대로 등장하는 사람만 포함하세요.
+			  이름이 하나도 등장하지 않으면 stakeholders는 반드시 빈 배열([])로 두세요.
+			  "마케팅팀", "개발팀"처럼 이름 없이 팀/직책만 언급된 경우도 stakeholders 항목으로
+			  만들지 마세요 — 그런 내용은 completionCriteria나 rulesAndExceptions 문장 안에서만 언급하세요.
+			  그럴듯해 보이는 사람 이름(예: 김철수, 이영희 같은 전형적인 이름)을 지어내는 것은 절대 금지입니다.
+			- "진행 중인 업무(ongoingTasks)"와 "반복 업무(recurringTasks)"도 원문에 실제로 설명된
+			  업무만 포함하고, 근거가 없으면 빈 배열로 두세요.
+			- "업무 기준과 예외(rulesAndExceptions)"도 원문 문장을 요약한 것만 넣고, 일반적으로
+			  그럴듯한 규칙을 추가로 만들어내지 마세요.
+			- 확신할 수 없으면 그 필드를 비워두거나, questions에 확인 질문을 추가하세요.
+			  "그럴듯해서 채워넣는 것"보다 "모르면 비워두는 것"이 항상 맞습니다.
+			""";
+
 	static final String ANALYSIS_SYSTEM_TEMPLATE = """
 			당신은 인수인계 문서를 자동으로 정리하는 어시스턴트입니다.
 			아래는 인계자가 업로드한 업무 자료 전체입니다.
@@ -30,7 +45,9 @@ final class RagPrompts {
 			2. 자료만으로는 판단할 수 없어 인계자에게 직접 확인이 필요한 부분이 있다면, 근거를 담은 객관식 질문으로 만드세요.
 			   애매한 부분이 없으면 질문은 빈 배열로 두세요.
 			3. 자료에 없는 내용은 지어내지 말고, 확인이 필요한 질문으로 돌리세요.
-			""";
+
+			%s
+			""".formatted(NO_FABRICATION_RULE);
 
 	static final String REGENERATE_SYSTEM_TEMPLATE = """
 			아래는 AI가 만든 인수인계 초안과, 인계자가 직접 답변한 확인 질문·답변입니다.
@@ -45,5 +62,7 @@ final class RagPrompts {
 			---------------------
 			{qna}
 			---------------------
-			""";
+
+			%s
+			""".formatted(NO_FABRICATION_RULE);
 }
