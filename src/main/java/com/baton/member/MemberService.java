@@ -27,13 +27,17 @@ public class MemberService {
 
 	private final UserRepository userRepository;
 
+	/**
+	 * 구성원 검색. query가 비면 전체를 드롭다운용으로 반환한다.
+	 * excludeUserId(보통 로그인 사용자 본인)는 결과에서 제외한다 — 인수자/관리자로 자기 자신을 고르지 못하게.
+	 */
 	@Transactional(readOnly = true)
-	public MemberPageResponse search(String query, UUID cursor, int size) {
+	public MemberPageResponse search(String query, UUID excludeUserId, UUID cursor, int size) {
 		int pageSize = clampSize(size);
 		String q = (query == null || query.isBlank()) ? null : query.trim();
 
 		// 다음 페이지 유무를 알기 위해 한 건 더 조회
-		List<User> rows = userRepository.searchByKeyword(q, cursor, PageRequest.of(0, pageSize + 1));
+		List<User> rows = userRepository.searchByKeyword(q, excludeUserId, cursor, PageRequest.of(0, pageSize + 1));
 
 		boolean hasNext = rows.size() > pageSize;
 		List<User> page = hasNext ? rows.subList(0, pageSize) : rows;
