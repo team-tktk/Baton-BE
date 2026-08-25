@@ -141,6 +141,21 @@ public class Handover {
 				.forEach(HandoverParticipant::markRead);
 	}
 
+	/** 관리자 검토 대상인가(승인/보완요청 가능한 단계인가). */
+	public boolean isPendingReview() {
+		return status == HandoverStatus.PENDING_REVIEW;
+	}
+
+	/** 관리자가 승인. */
+	public void markApproved() {
+		this.status = HandoverStatus.APPROVED;
+	}
+
+	/** 관리자가 보완 요청 → 인계자가 다시 고칠 수 있는 상태로. */
+	public void markRevisionRequested() {
+		this.status = HandoverStatus.REVISION_REQUESTED;
+	}
+
 	// ── 권한 판정 ────────────────────────────────────────────
 
 	public boolean isOwner(UUID userId) {

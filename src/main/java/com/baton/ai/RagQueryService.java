@@ -17,8 +17,10 @@ import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.vectorstore.filter.FilterExpressionBuilder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.baton.ai.dto.ChatAnswerResponse;
+import com.baton.ai.dto.ChatMessageResponse;
 import com.baton.ai.dto.Citation;
 
 import lombok.RequiredArgsConstructor;
@@ -39,12 +41,16 @@ public class RagQueryService {
 	private final VectorStore vectorStore;
 	private final ChatClient chatClient;
 	private final SourceDocumentRepository sourceDocumentRepository;
+	private final ChatMessageRepository chatMessageRepository;
 
-	public ChatAnswerResponse answer(UUID handoverId, String question) {
+	@Transactional
+	public ChatAnswerResponse answer(UUID handoverId, UUID askedBy, String question) {
 		List<Document> matches = search(handoverId, question);
 
 		if (matches.isEmpty()) {
-			return ChatAnswerResponse.notFound();
+			ChatAnswerResponse response = ChatAnswerResponse.notFound();
+			persist(handoverId, askedBy, question, response);
+			return response;
 		}
 
 		String context = matches.stream()
@@ -54,10 +60,26 @@ public class RagQueryService {
 		String answer = generateAnswer(context, question);
 
 		if (answer == null || answer.isBlank() || answer.contains(NOT_FOUND_MARKER)) {
-			return ChatAnswerResponse.notFound();
+			ChatAnswerResponse response = ChatAnswerResponse.notFound();
+			persist(handoverId, askedBy, question, response);
+			return response;
 		}
 
-		return ChatAnswerResponse.of(answer.trim(), buildCitations(matches));
+		ChatAnswerResponse response = ChatAnswerResponse.of(answer.trim(), buildCitations(matches));
+		persist(handoverId, askedBy, question, response);
+		return response;
+	}
+
+	@Transactional(readOnly = true)
+	public List<ChatMessageResponse> listMessages(UUID handoverId) {
+		return chatMessageRepository.findAllByHandoverIdOrderByCreatedAtAsc(handoverId).stream()
+				.map(ChatMessageResponse::from)
+				.toList();
+	}
+
+	private void persist(UUID handoverId, UUID askedBy, String question, ChatAnswerResponse response) {
+		chatMessageRepository.save(ChatMessage.create(
+				handoverId, askedBy, question, response.answer(), response.grounded(), response.citations()));
 	}
 
 	private List<Document> search(UUID handoverId, String question) {
