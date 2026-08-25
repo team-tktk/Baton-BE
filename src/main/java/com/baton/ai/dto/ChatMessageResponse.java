@@ -12,6 +12,7 @@ public record ChatMessageResponse(
 		String question,
 		String answer,
 		boolean grounded,
+		AnswerSource answerSource,
 		List<Citation> citations,
 		Instant createdAt) {
 
@@ -22,7 +23,15 @@ public record ChatMessageResponse(
 				message.getQuestion(),
 				message.getAnswer(),
 				message.isGrounded(),
+				resolveAnswerSource(message),
 				message.getCitations(),
 				message.getCreatedAt());
+	}
+
+	private static AnswerSource resolveAnswerSource(ChatMessage message) {
+		if (message.isGrounded()) {
+			return AnswerSource.DOCUMENT;
+		}
+		return message.getAnswer() == null ? AnswerSource.NOT_FOUND : AnswerSource.GENERAL_KNOWLEDGE;
 	}
 }

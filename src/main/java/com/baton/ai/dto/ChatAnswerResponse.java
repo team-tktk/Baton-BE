@@ -10,6 +10,7 @@ public record ChatAnswerResponse(
 		UUID messageId,
 		String answer,
 		boolean grounded,
+		AnswerSource answerSource,
 		List<Citation> citations,
 		String fallbackContact,
 		Instant answeredAt) {
@@ -18,12 +19,21 @@ public record ChatAnswerResponse(
 
 	/** 실제로 저장된 ChatMessage 기준으로 응답을 만든다 — 응답의 messageId가 이력 조회 결과와 항상 같은 값이 되도록. */
 	public static ChatAnswerResponse from(ChatMessage message) {
+		AnswerSource source = resolveAnswerSource(message);
 		return new ChatAnswerResponse(
 				message.getId(),
 				message.getAnswer(),
 				message.isGrounded(),
+				source,
 				message.getCitations(),
-				message.isGrounded() ? null : FALLBACK_CONTACT,
+				source == AnswerSource.NOT_FOUND ? FALLBACK_CONTACT : null,
 				message.getCreatedAt());
+	}
+
+	private static AnswerSource resolveAnswerSource(ChatMessage message) {
+		if (message.isGrounded()) {
+			return AnswerSource.DOCUMENT;
+		}
+		return message.getAnswer() == null ? AnswerSource.NOT_FOUND : AnswerSource.GENERAL_KNOWLEDGE;
 	}
 }
