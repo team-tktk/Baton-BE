@@ -23,6 +23,7 @@ public record HandoverResponse(
 		List<ParticipantDto> participants,
 		List<WorkScopeDto> workScopes,
 		Instant submittedAt,
+		Instant completedAt,
 		Instant createdAt,
 		Instant updatedAt) {
 
@@ -49,6 +50,7 @@ public record HandoverResponse(
 				h.getParticipants().stream().map(ParticipantDto::from).toList(),
 				h.getWorkScopes().stream().map(WorkScopeDto::from).toList(),
 				h.getSubmittedAt(),
+				h.getCompletedAt(),
 				h.getCreatedAt(),
 				h.getUpdatedAt());
 	}

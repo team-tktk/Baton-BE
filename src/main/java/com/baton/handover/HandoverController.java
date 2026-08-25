@@ -109,6 +109,14 @@ public class HandoverController {
 		return handoverService.acknowledge(handoverId, currentUserId(authentication));
 	}
 
+	@Operation(summary = "인수인계 완료 처리", description = "인수자가 인수인계를 완료 처리한다(→ COMPLETED). 멱등.")
+	@PostMapping("/{handoverId}/complete")
+	public HandoverResponse complete(
+			@PathVariable UUID handoverId,
+			Authentication authentication) {
+		return handoverService.complete(handoverId, currentUserId(authentication));
+	}
+
 	@Operation(summary = "인수인계 초안 삭제", description = "인계자가 제출 전(DRAFT) 초안을 삭제한다.")
 	@DeleteMapping("/{handoverId}")
 	@ResponseStatus(HttpStatus.NO_CONTENT)

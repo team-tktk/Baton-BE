@@ -216,7 +216,7 @@ public class RagController {
 		Handover handover = loadHandover(handoverId);
 		handoverPermission.requireViewer(handover, currentUserId(authentication));
 
-		String markdown = ragAnalysisService.exportMarkdown(handoverId, handover.getTitle());
+		String markdown = ragAnalysisService.exportMarkdown(handover);
 		ContentDisposition contentDisposition = ContentDisposition.attachment()
 				.filename(handover.getTitle() + ".md", StandardCharsets.UTF_8)
 				.build();

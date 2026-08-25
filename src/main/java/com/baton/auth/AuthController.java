@@ -20,6 +20,7 @@ import com.baton.auth.dto.LoginRequest;
 import com.baton.auth.dto.SignupRequest;
 import com.baton.auth.dto.UserResponse;
 
+import io.swagger.v3.oas.annotations.Operation;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
@@ -42,6 +43,7 @@ public class AuthController {
 	private final SecurityContextRepository securityContextRepository =
 			new HttpSessionSecurityContextRepository();
 
+	@Operation(summary = "회원가입", description = "이메일·비밀번호·이름·팀·직책으로 회원을 등록한다. 이메일 중복 시 409.")
 	@PostMapping("/signup")
 	@ResponseStatus(HttpStatus.CREATED)
 	public UserResponse signup(@Valid @RequestBody SignupRequest req) {
@@ -49,6 +51,7 @@ public class AuthController {
 				authService.signup(req.email(), req.password(), req.name(), req.team(), req.position()));
 	}
 
+	@Operation(summary = "로그인", description = "이메일·비밀번호로 인증하고 HTTP-only 세션 쿠키를 발급한다. 실패 시 401.")
 	@PostMapping("/login")
 	public UserResponse login(@Valid @RequestBody LoginRequest req,
 			HttpServletRequest request, HttpServletResponse response) {
@@ -65,6 +68,7 @@ public class AuthController {
 		return UserResponse.from(authService.getByEmail(authentication.getName()));
 	}
 
+	@Operation(summary = "로그아웃", description = "세션을 무효화하고 SecurityContext를 정리한다.")
 	@PostMapping("/logout")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void logout(HttpServletRequest request, HttpServletResponse response) {
@@ -73,6 +77,7 @@ public class AuthController {
 		new SecurityContextLogoutHandler().logout(request, response, auth);
 	}
 
+	@Operation(summary = "내 정보 조회", description = "로그인한 사용자의 프로필(id·이메일·이름·팀·직책)을 반환한다.")
 	@GetMapping("/me")
 	public UserResponse me(Authentication authentication) {
 		return UserResponse.from(authService.getByEmail(authentication.getName()));
