@@ -98,6 +98,14 @@ public class RagAnalysisService {
 		return HandoverDraftResponse.from(draft);
 	}
 
+	/** 초안이 아직 없으면 예외 대신 null. 검토 상세처럼 초안 유무와 무관하게 화면을 구성할 때 쓴다. */
+	@Transactional(readOnly = true)
+	public HandoverDraftResponse findDraftOrNull(UUID handoverId) {
+		return handoverDraftRepository.findByHandoverId(handoverId)
+				.map(HandoverDraftResponse::from)
+				.orElse(null);
+	}
+
 	/** 사람이 초안을 직접 수정한다(자동저장). 필드 단위가 아니라 content 전체를 교체한다. */
 	@Transactional
 	public HandoverDraftResponse updateDraft(UUID handoverId, HandoverDraftContent content) {
