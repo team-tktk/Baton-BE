@@ -13,6 +13,8 @@ import java.util.stream.Collectors;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.prompt.SystemPromptTemplate;
+import org.springframework.ai.openai.OpenAiChatOptions;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -60,6 +62,13 @@ public class RagAnalysisService {
 	private final UserRepository userRepository;
 	private final TransactionTemplate transactionTemplate;
 	private final HandoverRepository handoverRepository;
+
+	/**
+	 * 인수인계 자료 생성 전용 모델(초안·질문·재생성). 품질이 중요한 이 경로만 좋은 모델을 쓰고,
+	 * 채팅 Q&A·브리핑은 전역 chat 모델(application.yml, 더 빠르고 저렴)을 그대로 쓴다.
+	 */
+	@Value("${app.ai.analysis-model:gpt-5.4}")
+	private String analysisModel;
 
 	private static final DateTimeFormatter UPDATED_FMT =
 			DateTimeFormatter.ofPattern("yyyy. MM. dd. HH:mm", Locale.KOREA).withZone(ZoneId.of("Asia/Seoul"));
@@ -234,6 +243,7 @@ public class RagAnalysisService {
 		Message systemMessage = template.createMessage(Map.of("documents", documentsText));
 
 		return chatClient.prompt()
+				.options(OpenAiChatOptions.builder().model(analysisModel))
 				.messages(List.of(systemMessage))
 				.call()
 				.entity(AnalysisResult.class);
@@ -256,6 +266,7 @@ public class RagAnalysisService {
 				"qna", qnaText));
 
 		return chatClient.prompt()
+				.options(OpenAiChatOptions.builder().model(analysisModel))
 				.messages(List.of(systemMessage))
 				.call()
 				.entity(HandoverDraftContent.class);
