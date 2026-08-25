@@ -1,6 +1,7 @@
 package com.baton.ai;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 import org.hibernate.annotations.JdbcTypeCode;
@@ -52,6 +53,11 @@ public class HandoverDraft {
 	@Column(name = "briefing_summary", columnDefinition = "TEXT")
 	private String briefingSummary;
 
+	/** 채팅 화면에 보여줄 추천 질문. content가 바뀔 때마다 무효화되고, 조회 시점에 없으면 다시 생성한다. */
+	@JdbcTypeCode(SqlTypes.JSON)
+	@Column(name = "suggested_questions")
+	private List<String> suggestedQuestions;
+
 	private HandoverDraft(UUID handoverId, HandoverDraftContent content) {
 		this.handoverId = handoverId;
 		this.content = content;
@@ -64,10 +70,15 @@ public class HandoverDraft {
 	public void replaceContent(HandoverDraftContent content) {
 		this.content = content;
 		this.briefingSummary = null;
+		this.suggestedQuestions = null;
 	}
 
 	public void cacheBriefingSummary(String briefingSummary) {
 		this.briefingSummary = briefingSummary;
+	}
+
+	public void cacheSuggestedQuestions(List<String> suggestedQuestions) {
+		this.suggestedQuestions = suggestedQuestions;
 	}
 
 	@PrePersist

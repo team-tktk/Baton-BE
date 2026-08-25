@@ -12,6 +12,7 @@ import java.util.stream.Collectors;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.prompt.SystemPromptTemplate;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -121,6 +122,22 @@ public class RagAnalysisService {
 		}
 
 		return HandoverBriefingResponse.from(draft);
+	}
+
+	/**
+	 * 채팅 화면에 보여줄 추천 질문. 초안 내용에 근거해 AI가 만들고, 초안이 바뀌기 전까지 재사용한다.
+	 * (이전에는 프론트에 고정 문구가 하드코딩되어 있어 모든 인수인계에서 똑같은 질문만 나왔다.)
+	 */
+	@Transactional
+	public List<String> getSuggestedQuestions(UUID handoverId) {
+		HandoverDraft draft = handoverDraftRepository.findByHandoverId(handoverId)
+				.orElseThrow(() -> new BusinessException(ErrorCode.AI_DRAFT_NOT_FOUND));
+
+		if (draft.getSuggestedQuestions() == null) {
+			draft.cacheSuggestedQuestions(generateSuggestedQuestions(draft.getContent()));
+		}
+
+		return draft.getSuggestedQuestions();
 	}
 
 	/** 사람이 초안을 직접 수정한다(자동저장). 필드 단위가 아니라 content 전체를 교체한다. */
@@ -239,6 +256,18 @@ public class RagAnalysisService {
 				.messages(List.of(systemMessage))
 				.call()
 				.content();
+	}
+
+	private List<String> generateSuggestedQuestions(HandoverDraftContent content) {
+		SystemPromptTemplate template = new SystemPromptTemplate(RagPrompts.SUGGESTED_QUESTIONS_SYSTEM_TEMPLATE);
+		Message systemMessage = template.createMessage(Map.of("draft", writeJson(content)));
+
+		List<String> questions = chatClient.prompt()
+				.messages(List.of(systemMessage))
+				.call()
+				.entity(new ParameterizedTypeReference<List<String>>() {
+				});
+		return questions == null ? List.of() : questions;
 	}
 
 	private HandoverDraftContent regenerateDraft(HandoverDraftContent currentDraft, String qnaText) {
