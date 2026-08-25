@@ -6,6 +6,9 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.baton.ai.RagAnalysisService;
+import com.baton.ai.RagIngestService;
+import com.baton.ai.dto.FileMetadataResponse;
 import com.baton.auth.User;
 import com.baton.auth.UserRepository;
 import com.baton.common.BusinessException;
@@ -35,6 +38,8 @@ public class ReviewService {
 	private final ReviewChecklistItemRepository checklistItemRepository;
 	private final ReviewCommentRepository commentRepository;
 	private final UserRepository userRepository;
+	private final RagAnalysisService ragAnalysisService;
+	private final RagIngestService ragIngestService;
 
 	@Transactional(readOnly = true)
 	public ReviewDetailResponse getReview(UUID handoverId, UUID viewerId) {
@@ -44,8 +49,20 @@ public class ReviewService {
 		List<ChecklistItemResponse> checklist = checklistItemRepository.findAllByHandoverId(handoverId).stream()
 				.map(ChecklistItemResponse::from)
 				.toList();
+		List<FileMetadataResponse> attachments = ragIngestService.listByHandover(handoverId).stream()
+				.map(FileMetadataResponse::from)
+				.toList();
+		List<CommentResponse> comments = commentRepository.findAllByHandoverIdOrderByCreatedAtAsc(handoverId).stream()
+				.map(comment -> CommentResponse.of(comment, authorNameOf(comment.getAuthorId())))
+				.toList();
 
-		return new ReviewDetailResponse(handoverId, handover.getStatus().name(), checklist);
+		return new ReviewDetailResponse(
+				handoverId,
+				handover.getStatus().name(),
+				ragAnalysisService.findDraftOrNull(handoverId),
+				attachments,
+				checklist,
+				comments);
 	}
 
 	/** 체크리스트를 통째로 교체한다(WorkScope와 같은 방식). */
@@ -115,12 +132,13 @@ public class ReviewService {
 		return HandoverResponse.of(handover, reviewerId);
 	}
 
-	/** 관리자가 최종 승인한다(→ APPROVED). */
+	/** 관리자가 최종 승인한다(→ APPROVED). 체크리스트를 모두 완료해야 승인할 수 있다. */
 	@Transactional
 	public HandoverResponse approve(UUID handoverId, UUID reviewerId) {
 		Handover handover = load(handoverId);
 		permission.requireReviewer(handover, reviewerId);
 		requirePendingReview(handover);
+		requireChecklistComplete(handoverId);
 
 		handover.markApproved();
 		return HandoverResponse.of(handover, reviewerId);
@@ -130,6 +148,20 @@ public class ReviewService {
 		if (!handover.isPendingReview()) {
 			throw new BusinessException(ErrorCode.HANDOVER_INVALID_STATE,
 					"검토 대기 상태가 아닙니다: " + handover.getStatus());
+		}
+	}
+
+	/** 체크리스트가 비어 있거나 미체크 항목이 하나라도 있으면 승인 불가(409). */
+	private void requireChecklistComplete(UUID handoverId) {
+		List<ReviewChecklistItem> items = checklistItemRepository.findAllByHandoverId(handoverId);
+		if (items.isEmpty()) {
+			throw new BusinessException(ErrorCode.REVIEW_CHECKLIST_INCOMPLETE,
+					"검토 체크리스트를 먼저 작성하고 모두 완료해야 승인할 수 있습니다.");
+		}
+		boolean hasUnchecked = items.stream().anyMatch(item -> !item.isChecked());
+		if (hasUnchecked) {
+			throw new BusinessException(ErrorCode.REVIEW_CHECKLIST_INCOMPLETE,
+					"완료하지 않은 체크리스트 항목이 있습니다.");
 		}
 	}
 

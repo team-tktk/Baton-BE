@@ -1,6 +1,6 @@
 package com.baton.handover;
 
-import java.util.EnumMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -57,18 +57,23 @@ public class HandoverService {
 	public HandoverListResponse listSent(UUID userId, HandoverStatus status, UUID cursor, int size) {
 		int pageSize = clampSize(size);
 		List<Handover> rows = handoverRepository.findSent(userId, status, cursor, PageRequest.of(0, pageSize + 1));
-		Map<HandoverStatus, Long> counts = toStatusCounts(handoverRepository.countSentByStatus(userId));
+		Map<String, Long> counts = toStatusCounts(handoverRepository.countSentByStatus(userId));
 		return buildList(rows, pageSize, counts, (h, v) -> HandoverSummaryResponse.ofSent(h), userId);
 	}
 
-	/** 인수자가 받은 인수인계 목록. */
+	/**
+	 * 인수자가 받은 인수인계 목록. 필터는 인수자 관점의 UNREAD/IN_PROGRESS/COMPLETED다(본 상태와 별개).
+	 * 뱃지 개수도 같은 세 버킷 기준으로 내린다.
+	 */
 	@Transactional(readOnly = true)
-	public HandoverListResponse listReceived(UUID userId, HandoverStatus status, UUID cursor, int size) {
+	public HandoverListResponse listReceived(UUID userId, ReceivedFilter filter, UUID cursor, int size) {
 		int pageSize = clampSize(size);
-		List<Handover> rows = handoverRepository.findReceived(
-				userId, ParticipantRole.RECIPIENT, status, cursor, PageRequest.of(0, pageSize + 1));
-		Map<HandoverStatus, Long> counts = toStatusCounts(
-				handoverRepository.countReceivedByStatus(userId, ParticipantRole.RECIPIENT));
+		List<Handover> rows = handoverRepository.findReceivedFiltered(
+				userId, ParticipantRole.RECIPIENT,
+				receiptStatusFor(filter), completedFor(filter), HandoverStatus.COMPLETED,
+				cursor, PageRequest.of(0, pageSize + 1));
+		Map<String, Long> counts = toReceivedCounts(
+				handoverRepository.countReceivedGrouped(userId, ParticipantRole.RECIPIENT));
 		return buildList(rows, pageSize, counts, HandoverSummaryResponse::ofReceived, userId);
 	}
 
@@ -81,7 +86,7 @@ public class HandoverService {
 		int pageSize = clampSize(size);
 		List<Handover> rows = handoverRepository.findReceived(
 				userId, ParticipantRole.REVIEWER, status, cursor, PageRequest.of(0, pageSize + 1));
-		Map<HandoverStatus, Long> counts = toStatusCounts(
+		Map<String, Long> counts = toStatusCounts(
 				handoverRepository.countReceivedByStatus(userId, ParticipantRole.REVIEWER));
 		return buildList(rows, pageSize, counts, (h, v) -> HandoverSummaryResponse.ofSent(h), userId);
 	}
@@ -176,7 +181,7 @@ public class HandoverService {
 	}
 
 	/** size+1건에서 다음 페이지 유무를 판별하고 요약 DTO로 매핑한다. */
-	private HandoverListResponse buildList(List<Handover> rows, int pageSize, Map<HandoverStatus, Long> counts,
+	private HandoverListResponse buildList(List<Handover> rows, int pageSize, Map<String, Long> counts,
 			BiFunction<Handover, UUID, HandoverSummaryResponse> mapper, UUID viewerId) {
 		boolean hasNext = rows.size() > pageSize;
 		List<Handover> page = hasNext ? rows.subList(0, pageSize) : rows;
@@ -185,16 +190,62 @@ public class HandoverService {
 		return new HandoverListResponse(items, nextCursor, hasNext, counts);
 	}
 
-	/** GROUP BY 결과(Object[]{status, count})를 모든 상태 0으로 초기화한 맵에 덮어쓴다. */
-	private Map<HandoverStatus, Long> toStatusCounts(List<Object[]> grouped) {
-		Map<HandoverStatus, Long> counts = new EnumMap<>(HandoverStatus.class);
+	/** GROUP BY 결과(Object[]{status, count})를 모든 상태 0으로 초기화한 맵에 status 이름으로 담는다. */
+	private Map<String, Long> toStatusCounts(List<Object[]> grouped) {
+		Map<String, Long> counts = new LinkedHashMap<>();
 		for (HandoverStatus s : HandoverStatus.values()) {
-			counts.put(s, 0L);
+			counts.put(s.name(), 0L);
 		}
 		for (Object[] row : grouped) {
-			counts.put((HandoverStatus) row[0], (Long) row[1]);
+			counts.put(((HandoverStatus) row[0]).name(), (Long) row[1]);
 		}
 		return counts;
+	}
+
+	/** (본상태, 수신상태)별 집계를 인수자 관점 세 버킷(UNREAD/IN_PROGRESS/COMPLETED)으로 합산한다. */
+	private Map<String, Long> toReceivedCounts(List<Object[]> grouped) {
+		Map<String, Long> counts = new LinkedHashMap<>();
+		for (ReceivedFilter f : ReceivedFilter.values()) {
+			counts.put(f.name(), 0L);
+		}
+		for (Object[] row : grouped) {
+			HandoverStatus status = (HandoverStatus) row[0];
+			ReceiptStatus receipt = (ReceiptStatus) row[1];
+			long count = (Long) row[2];
+			ReceivedFilter bucket;
+			if (status == HandoverStatus.COMPLETED) {
+				bucket = ReceivedFilter.COMPLETED;
+			} else if (receipt == ReceiptStatus.UNREAD) {
+				bucket = ReceivedFilter.UNREAD;
+			} else {
+				bucket = ReceivedFilter.IN_PROGRESS;
+			}
+			counts.merge(bucket.name(), count, Long::sum);
+		}
+		return counts;
+	}
+
+	/** 필터 → 조회할 수신 상태(COMPLETED 필터는 열람 여부 무관이라 null). */
+	private ReceiptStatus receiptStatusFor(ReceivedFilter filter) {
+		if (filter == null) {
+			return null;
+		}
+		return switch (filter) {
+			case UNREAD -> ReceiptStatus.UNREAD;
+			case IN_PROGRESS -> ReceiptStatus.READ;
+			case COMPLETED -> null;
+		};
+	}
+
+	/** 필터 → 완료 여부 조건(null=무관, TRUE=완료건만, FALSE=미완료건만). */
+	private Boolean completedFor(ReceivedFilter filter) {
+		if (filter == null) {
+			return null;
+		}
+		return switch (filter) {
+			case UNREAD, IN_PROGRESS -> Boolean.FALSE;
+			case COMPLETED -> Boolean.TRUE;
+		};
 	}
 
 	private int clampSize(int size) {

@@ -99,6 +99,14 @@ public class RagAnalysisService {
 		return HandoverDraftResponse.from(draft);
 	}
 
+	/** 초안이 아직 없으면 예외 대신 null. 검토 상세처럼 초안 유무와 무관하게 화면을 구성할 때 쓴다. */
+	@Transactional(readOnly = true)
+	public HandoverDraftResponse findDraftOrNull(UUID handoverId) {
+		return handoverDraftRepository.findByHandoverId(handoverId)
+				.map(HandoverDraftResponse::from)
+				.orElse(null);
+	}
+
 	/**
 	 * 인수자용 첫날 요약. 초안 전체가 아니라 당장 필요한 필드만 추려서 반환하고,
 	 * AI가 쓴 환영 브리핑 문장을 곁들인다. 브리핑 문장은 초안이 바뀌기 전까지 재사용한다.

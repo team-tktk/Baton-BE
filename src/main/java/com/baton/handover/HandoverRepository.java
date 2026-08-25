@@ -54,6 +54,38 @@ public interface HandoverRepository extends JpaRepository<Handover, UUID> {
 			@Param("cursor") UUID cursor,
 			Pageable pageable);
 
+	/**
+	 * 인수자 관점 필터(UNREAD/IN_PROGRESS/COMPLETED)로 받은 목록을 조회한다.
+	 * 필터는 (receiptStatus, completed) 두 조건으로 분해해 넘긴다:
+	 *  - receiptStatus IS NULL이면 열람 상태 무관, 아니면 해당 열람 상태만
+	 *  - completed IS NULL이면 완료 여부 무관, TRUE면 완료건만, FALSE면 미완료건만
+	 */
+	@Query("""
+			SELECT h FROM Handover h JOIN h.participants p
+			WHERE p.userId = :userId AND p.role = :role
+			  AND (:receiptStatus IS NULL OR p.receiptStatus = :receiptStatus)
+			  AND (:completed IS NULL
+			       OR (:completed = TRUE AND h.status = :completedStatus)
+			       OR (:completed = FALSE AND h.status <> :completedStatus))
+			  AND (:cursor IS NULL OR h.id > :cursor)
+			ORDER BY h.id ASC
+			""")
+	List<Handover> findReceivedFiltered(@Param("userId") UUID userId,
+			@Param("role") ParticipantRole role,
+			@Param("receiptStatus") ReceiptStatus receiptStatus,
+			@Param("completed") Boolean completed,
+			@Param("completedStatus") HandoverStatus completedStatus,
+			@Param("cursor") UUID cursor,
+			Pageable pageable);
+
+	/** 받은 목록을 (본상태, 수신상태)별로 집계한다. 필터 탭 뱃지 개수를 서비스에서 버킷팅하는 데 쓴다. */
+	@Query("""
+			SELECT h.status, p.receiptStatus, COUNT(h) FROM Handover h JOIN h.participants p
+			WHERE p.userId = :userId AND p.role = :role
+			GROUP BY h.status, p.receiptStatus
+			""")
+	List<Object[]> countReceivedGrouped(@Param("userId") UUID userId, @Param("role") ParticipantRole role);
+
 	/** 보낸 목록의 상태별 개수. */
 	@Query("SELECT h.status, COUNT(h) FROM Handover h WHERE h.ownerId = :userId GROUP BY h.status")
 	List<Object[]> countSentByStatus(@Param("userId") UUID userId);

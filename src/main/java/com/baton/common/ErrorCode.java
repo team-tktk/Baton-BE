@@ -31,6 +31,9 @@ public enum ErrorCode {
 	HANDOVER_INVALID_PARTICIPANT(HttpStatus.BAD_REQUEST, "존재하지 않는 사용자를 참여자로 지정했습니다"),
 	HANDOVER_INVALID_STATE(HttpStatus.CONFLICT, "현재 상태에서는 할 수 없는 작업입니다"),
 
+	// ── 검토(review) ────────────────────────────────────────
+	REVIEW_CHECKLIST_INCOMPLETE(HttpStatus.CONFLICT, "체크리스트를 모두 완료해야 승인할 수 있습니다"),
+
 	// ── AI / RAG ────────────────────────────────────────────
 	AI_UNSUPPORTED_FILE_TYPE(HttpStatus.BAD_REQUEST, "지원하지 않는 파일 형식입니다"),
 	AI_FILE_PARSE_FAILED(HttpStatus.UNPROCESSABLE_ENTITY, "파일에서 텍스트를 추출하지 못했습니다"),
