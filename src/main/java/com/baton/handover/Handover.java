@@ -59,6 +59,10 @@ public class Handover {
 	@Column(name = "submitted_at")
 	private Instant submittedAt;
 
+	/** 인수자가 완료 처리한 시각. 완료 전이면 null. */
+	@Column(name = "completed_at")
+	private Instant completedAt;
+
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private Instant createdAt;
 
@@ -119,8 +123,7 @@ public class Handover {
 
 	/** 제출 가능한 단계인가(작성/수정 중 또는 보완요청 후 재제출). */
 	public boolean isSubmittable() {
-		return status == HandoverStatus.DRAFT
-				|| status == HandoverStatus.EDITING
+		return status == HandoverStatus.EDITING
 				|| status == HandoverStatus.REVISION_REQUESTED;
 	}
 
@@ -132,6 +135,49 @@ public class Handover {
 	public void markSubmitted() {
 		this.status = HandoverStatus.PENDING_REVIEW;
 		this.submittedAt = Instant.now();
+	}
+
+	public boolean isCompleted() {
+		return status == HandoverStatus.COMPLETED;
+	}
+
+	/** 완료 처리 가능한가(제출된 적이 있어야 함). */
+	public boolean isCompletable() {
+		return submittedAt != null;
+	}
+
+	/** 인수자가 인수인계를 완료 처리. */
+	public void markCompleted() {
+		this.status = HandoverStatus.COMPLETED;
+		this.completedAt = Instant.now();
+	}
+
+	/** 새 분석 또는 실패 작업 재시도를 시작할 수 있는 단계인가. */
+	public boolean canStartAnalysis() {
+		return status == HandoverStatus.DRAFT
+				|| status == HandoverStatus.EDITING
+				|| status == HandoverStatus.REVISION_REQUESTED;
+	}
+
+	public void markAnalysisStarted() {
+		this.status = HandoverStatus.ANALYZING;
+	}
+
+	public void markAnalysisCompleted(boolean hasQuestions) {
+		this.status = hasQuestions ? HandoverStatus.ANSWERING : HandoverStatus.EDITING;
+	}
+
+	public void markQuestionsCompleted() {
+		if (this.status == HandoverStatus.ANSWERING) {
+			this.status = HandoverStatus.EDITING;
+		}
+	}
+
+	/** 실패 후 같은 파일로 재시도하거나 기본 정보를 다시 편집할 수 있게 되돌린다. */
+	public void markAnalysisFailed() {
+		if (this.status == HandoverStatus.ANALYZING) {
+			this.status = HandoverStatus.DRAFT;
+		}
 	}
 
 	/** 해당 인수자의 수신 상태를 READ로. 인수자가 아니면 아무 일도 하지 않는다(멱등). */

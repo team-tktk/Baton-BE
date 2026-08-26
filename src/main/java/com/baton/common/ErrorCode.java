@@ -31,13 +31,22 @@ public enum ErrorCode {
 	HANDOVER_INVALID_PARTICIPANT(HttpStatus.BAD_REQUEST, "존재하지 않는 사용자를 참여자로 지정했습니다"),
 	HANDOVER_INVALID_STATE(HttpStatus.CONFLICT, "현재 상태에서는 할 수 없는 작업입니다"),
 
+	// ── 검토(review) ────────────────────────────────────────
+	REVIEW_CHECKLIST_INCOMPLETE(HttpStatus.CONFLICT, "체크리스트를 모두 완료해야 승인할 수 있습니다"),
+
 	// ── AI / RAG ────────────────────────────────────────────
 	AI_UNSUPPORTED_FILE_TYPE(HttpStatus.BAD_REQUEST, "지원하지 않는 파일 형식입니다"),
 	AI_FILE_PARSE_FAILED(HttpStatus.UNPROCESSABLE_ENTITY, "파일에서 텍스트를 추출하지 못했습니다"),
 	AI_SOURCE_DOCUMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 문서입니다"),
 	AI_NO_DOCUMENTS(HttpStatus.BAD_REQUEST, "분석할 업로드 파일이 없습니다"),
 	AI_DRAFT_NOT_FOUND(HttpStatus.NOT_FOUND, "생성된 인수인계 초안이 없습니다"),
-	AI_QUESTION_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 질문입니다");
+	AI_QUESTION_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 질문입니다"),
+	AI_QUESTION_ANSWER_INVALID(HttpStatus.BAD_REQUEST, "답변하거나 건너뛰기 중 하나를 선택해야 합니다"),
+	AI_SOURCE_DOCUMENT_PROCESSING(HttpStatus.CONFLICT, "처리 중인 파일은 삭제할 수 없습니다"),
+	AI_QUESTIONS_INCOMPLETE(HttpStatus.CONFLICT, "답변하지 않은 확인 질문이 있습니다"),
+	AI_ANALYSIS_JOB_NOT_FOUND(HttpStatus.NOT_FOUND, "분석 작업을 찾을 수 없습니다"),
+	AI_ANALYSIS_ALREADY_RUNNING(HttpStatus.CONFLICT, "이미 분석 작업이 진행 중입니다"),
+	AI_ANALYSIS_RETRY_NOT_ALLOWED(HttpStatus.CONFLICT, "실패한 분석 작업만 재시도할 수 있습니다");
 
 	private final HttpStatus status;
 	private final String message;

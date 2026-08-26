@@ -27,7 +27,9 @@ public class CorsConfig {
 	@Bean
 	public CorsConfigurationSource corsConfigurationSource() {
 		CorsConfiguration config = new CorsConfiguration();
-		config.setAllowedOrigins(allowedOrigins);
+		// allowCredentials(true)와 함께 "*"는 금지되므로, 정확 매칭 대신 패턴 매칭을 쓴다.
+		// 패턴은 정확한 origin(http://localhost:5173)도 그대로 허용하고, 와일드카드(*.vercel.app 등)도 받는다.
+		config.setAllowedOriginPatterns(allowedOrigins);
 		config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
 		config.setAllowedHeaders(List.of("*"));
 		config.setAllowCredentials(true);
