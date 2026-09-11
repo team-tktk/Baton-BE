@@ -6,6 +6,8 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.web.authentication.session.ChangeSessionIdAuthenticationStrategy;
+import org.springframework.security.web.authentication.session.SessionAuthenticationStrategy;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.security.web.authentication.logout.SecurityContextLogoutHandler;
@@ -45,6 +47,12 @@ public class AuthController {
 	private final SecurityContextRepository securityContextRepository =
 			new HttpSessionSecurityContextRepository();
 
+	// 세션 고정(Session Fixation) 방어: 로그인 성공 시 세션 ID를 새 값으로 갈아끼운다.
+	// 로그인을 컨트롤러에서 수동 처리하면 Security 로그인 필터의 자동 방어가 안 걸리므로 여기서 직접 적용한다.
+	// 기존 세션이 없거나 이미 적용된 경우도 전략이 알아서 처리한다.
+	private final SessionAuthenticationStrategy sessionAuthenticationStrategy =
+			new ChangeSessionIdAuthenticationStrategy();
+
 	@Operation(summary = "회원가입",
 			description = """
 					이메일·비밀번호·이름·팀·직책으로 회원을 등록하고 생성된 프로필을 반환한다. 비로그인 상태로 호출한다.
@@ -72,6 +80,9 @@ public class AuthController {
 		// 자격 증명 검증 — 실패 시 BadCredentialsException → 401
 		Authentication authentication = authenticationManager.authenticate(
 				UsernamePasswordAuthenticationToken.unauthenticated(req.email(), req.password()));
+
+		// 세션 고정 방어 — SecurityContext를 저장하기 전에 세션 ID를 새로 발급한다.
+		sessionAuthenticationStrategy.onAuthentication(authentication, request, response);
 
 		// 인증 성공 → SecurityContext를 세션에 저장(= 로그인 상태 유지)
 		SecurityContext context = SecurityContextHolder.createEmptyContext();
