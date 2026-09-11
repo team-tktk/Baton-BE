@@ -13,6 +13,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.savedrequest.NullRequestCache;
 
 import com.baton.common.RestAuthenticationEntryPoint;
 
@@ -47,6 +48,10 @@ public class SecurityConfig {
 				// 세션은 필요할 때 생성(로그인 시). Spring Session이 JDBC에 저장.
 				.sessionManagement(session -> session
 						.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
+				// REST API라 "로그인 후 원래 요청으로 리다이렉트"가 없다. 기본 RequestCache는 미인증 요청을
+				// 세션에 저장(SPRING_SECURITY_SAVED_REQUEST)하는데, 이 때문에 인증 없는 요청마다 세션 행이
+				// 쌓여 DB가 부푼다(가벼운 DoS/낭비). NullRequestCache로 꺼서 불필요한 세션 생성을 막는다.
+				.requestCache(cache -> cache.requestCache(new NullRequestCache()))
 				// 미인증 요청은 로그인 폼 리다이렉트 대신, 나머지 에러와 같은 ProblemDetail(401) 반환
 				.exceptionHandling(ex -> ex
 						.authenticationEntryPoint(new RestAuthenticationEntryPoint()))
