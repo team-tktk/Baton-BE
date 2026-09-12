@@ -54,6 +54,9 @@ dependencies {
 	// API 문서 (Swagger UI) — Boot 4는 springdoc 3.x. 2.x는 Boot 3 전용이라 물리면 깨짐.
 	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.0'
 
+	// 헬스체크(/actuator/health) — DB 연결·디스크 여유공간까지 자동으로 같이 체크해준다.
+	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+
 	// 코드 고치면 자동 재시작
 	developmentOnly 'org.springframework.boot:spring-boot-devtools'
 
