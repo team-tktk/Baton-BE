@@ -27,7 +27,7 @@ repositories {
 ext {
 	// Spring AI 2.x = Spring Boot 4.x 전용. 1.x는 Boot 3용이라 물리면 깨짐.
 	springAiVersion = '2.0.1'
-	awsSdkVersion = '2.29.52'
+	awsSdkVersion = '2.54.14'
 }
 
 dependencyManagement {
@@ -52,7 +52,7 @@ dependencies {
 	annotationProcessor 'org.projectlombok:lombok'
 
 	// API 문서 (Swagger UI) — Boot 4는 springdoc 3.x. 2.x는 Boot 3 전용이라 물리면 깨짐.
-	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.0'
+	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.1'
 
 	// 헬스체크(/actuator/health) — DB 연결·디스크 여유공간까지 자동으로 같이 체크해준다.
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
