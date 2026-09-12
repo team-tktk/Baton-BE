@@ -23,3 +23,12 @@ server:
       cookie:
         secure: true   # HTTPS 연결에서만 쿠키 전송
 
+# 운영 로그 — 개발용 상세 로그를 끈다.
+# application.yml은 SQL과 그 바인딩 파라미터 값(bind: trace)까지 찍는데, 이러면 회원가입 SQL에
+# 이메일·비밀번호 해시 같은 민감정보가 로그에 그대로 남는다. 운영에선 반드시 꺼야 한다.
+logging:
+  level:
+    com.baton: info
+    org.hibernate.SQL: warn
+    org.hibernate.orm.jdbc.bind: warn
+

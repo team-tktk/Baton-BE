@@ -13,6 +13,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy;
 import org.springframework.security.web.savedrequest.NullRequestCache;
 
 import com.baton.common.RestAuthenticationEntryPoint;
@@ -38,6 +39,18 @@ public class SecurityConfig {
 						.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
 						.csrfTokenRequestHandler(new SpaCsrfTokenRequestHandler()))
 				.addFilterAfter(new CsrfCookieFilter(), BasicAuthenticationFilter.class)
+				// 보안 응답 헤더 — 브라우저가 알아서 공격을 막도록 지시한다.
+				.headers(headers -> headers
+						// X-Content-Type-Options: nosniff — MIME 타입 추측(스니핑)으로 인한 악성 실행 차단
+						.contentTypeOptions(Customizer.withDefaults())
+						// X-Frame-Options: DENY — 우리 페이지를 iframe에 삽입하는 클릭재킹 차단
+						.frameOptions(frame -> frame.deny())
+						// HSTS — HTTPS 연결에서만 전송된다. 이후 접속을 강제로 HTTPS로(1년). http 로컬 개발엔 영향 없음.
+						.httpStrictTransportSecurity(hsts -> hsts
+								.includeSubDomains(true)
+								.maxAgeInSeconds(31_536_000))
+						// Referrer-Policy — 외부로 이동할 때 전체 URL(민감정보 포함 가능)이 새어나가지 않게 최소화
+						.referrerPolicy(referrer -> referrer.policy(ReferrerPolicy.SAME_ORIGIN)))
 				.authorizeHttpRequests(auth -> auth
 						// 인증 없이 접근 가능한 공개 엔드포인트
 						.requestMatchers("/api/v1/auth/signup", "/api/v1/auth/login").permitAll()
