@@ -72,6 +72,19 @@ springdoc:
     path: /v3/api-docs
   default-produces-media-type: application/json
 
+# 헬스체크. /actuator/health는 인증 없이 열려있으니(SecurityConfig) 세부 정보는 절대 노출하지 않는다.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+  health:
+    diskspace:
+      threshold: 300MB   # 이거보다 여유공간이 적으면 DOWN — 배포 실패로 이어지기 전에 미리 잡기 위함
+
 server:
   port: 8080
   servlet:
