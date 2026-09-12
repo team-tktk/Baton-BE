@@ -98,3 +98,6 @@ app:
   s3:
     bucket: ${S3_BUCKET}
     region: ${S3_REGION:ap-northeast-2}
+  discord:
+    # 에러(ERROR) 로그를 디스코드 채널로 보낼 웹훅 URL. 비어있으면 전송 안 함(로컬 개발 기본값).
+    error-webhook-url: ${DISCORD_ERROR_WEBHOOK_URL:}
