@@ -1,0 +1,28 @@
+# Dependabot — 의존성 취약점/업데이트를 GitHub이 자동 감시한다.
+# 취약하거나 오래된 라이브러리가 있으면 "버전 올리는 PR"을 자동으로 열어준다.
+# (별도로 저장소 Settings → Code security 에서 "Dependabot alerts"와 "security updates"를 켜면
+#  보안 취약점은 일정과 무관하게 즉시 PR로 올라온다.)
+version: 2
+updates:
+  # Gradle 의존성(build.gradle의 라이브러리)
+  - package-ecosystem: "gradle"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+    # 한 번에 우르르 올라오지 않게, 사소한 패치는 묶어서 PR 하나로
+    groups:
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # GitHub Actions 워크플로(.github/workflows)에서 쓰는 액션 버전도 최신/보안 유지
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
