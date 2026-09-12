@@ -8,6 +8,7 @@ import java.util.stream.Collectors;
 
 import org.springframework.ai.document.Document;
 import org.springframework.ai.reader.tika.TikaDocumentReader;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.ai.transformer.splitter.TokenTextSplitter;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.core.io.ByteArrayResource;
@@ -64,6 +65,12 @@ public class RagIngestService {
 	private final EntityManager entityManager;
 	private final FileSignatureValidator fileSignatureValidator;
 
+	@Value("${app.upload.max-files-per-handover}")
+	private int maxFilesPerHandover;
+
+	@Value("${app.upload.max-total-size-per-handover-mb}")
+	private long maxTotalSizePerHandoverMb;
+
 	/**
 	 * RagController 클래스 전체에 @Transactional이 걸려있어서(권한 체크의 지연로딩 때문), 여기서
 	 * 상태 변경을 직접 save해도 파싱/임베딩 실패 시 컨트롤러 트랜잭션과 함께 롤백돼버린다 —
@@ -75,6 +82,7 @@ public class RagIngestService {
 			throw new BusinessException(ErrorCode.BAD_REQUEST, "빈 파일은 업로드할 수 없습니다.");
 		}
 		String extension = validateExtension(file.getOriginalFilename());
+		validateQuota(handoverId, file.getSize());
 		String safeFileName = sanitizeFileName(file.getOriginalFilename());
 
 		byte[] fileBytes;
@@ -129,6 +137,25 @@ public class RagIngestService {
 					"PDF, DOCX, XLSX, PPTX 파일만 업로드할 수 있습니다.");
 		}
 		return extension;
+	}
+
+	/**
+	 * 인수인계 1건당 파일 개수·누적 용량 상한을 체크한다. 파일 1개당 50MB 제한과는 별개로,
+	 * S3/임베딩 비용이 무제한으로 쌓이는 걸 막기 위함(개수·용량 남용 방지).
+	 */
+	private void validateQuota(UUID handoverId, long newFileSize) {
+		long currentCount = sourceDocumentRepository.countByHandoverId(handoverId);
+		if (currentCount >= maxFilesPerHandover) {
+			throw new BusinessException(ErrorCode.AI_UPLOAD_QUOTA_EXCEEDED,
+					"이 인수인계에는 파일을 최대 %d개까지 업로드할 수 있습니다.".formatted(maxFilesPerHandover));
+		}
+
+		long maxTotalSizeBytes = maxTotalSizePerHandoverMb * 1024 * 1024;
+		long currentTotalSize = sourceDocumentRepository.sumFileSizeByHandoverId(handoverId);
+		if (currentTotalSize + newFileSize > maxTotalSizeBytes) {
+			throw new BusinessException(ErrorCode.AI_UPLOAD_QUOTA_EXCEEDED,
+					"이 인수인계의 업로드 총 용량은 최대 %dMB까지 가능합니다.".formatted(maxTotalSizePerHandoverMb));
+		}
 	}
 
 	/**

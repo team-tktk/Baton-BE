@@ -15,6 +15,10 @@ public interface SourceDocumentRepository extends JpaRepository<SourceDocument, 
 	/** 상세 화면 등 단건 인수인계의 첨부 파일 개수. */
 	long countByHandoverId(UUID handoverId);
 
+	/** 업로드 용량 상한 체크용 — 해당 인수인계에 이미 쌓인 파일들의 총 용량(바이트). */
+	@Query("SELECT COALESCE(SUM(s.fileSize), 0) FROM SourceDocument s WHERE s.handoverId = :handoverId")
+	long sumFileSizeByHandoverId(@Param("handoverId") UUID handoverId);
+
 	/**
 	 * 목록 화면용 — 여러 인수인계의 첨부 파일 개수를 한 번에 집계한다(N+1 방지).
 	 * 결과는 Object[]{handoverId(UUID), count(Long)} 행들. 파일이 0개인 인수인계는 결과에 없다.
