@@ -20,6 +20,8 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import com.baton.common.BusinessException;
 import com.baton.common.ErrorCode;
+import com.baton.handover.Handover;
+import com.baton.handover.HandoverRepository;
 
 import jakarta.persistence.EntityManager;
 
@@ -41,17 +43,22 @@ class RagIngestServiceQuotaTest {
 	private EntityManager entityManager;
 	@Mock
 	private FileSignatureValidator fileSignatureValidator;
+	@Mock
+	private HandoverRepository handoverRepository;
 
 	private RagIngestService service;
 	private UUID handoverId;
+	private UUID ownerId;
 
 	@BeforeEach
 	void setUp() {
 		service = new RagIngestService(sourceDocumentRepository, sourceDocumentPersistence,
-				vectorStore, tokenTextSplitter, s3FileStorage, entityManager, fileSignatureValidator);
+				vectorStore, tokenTextSplitter, s3FileStorage, entityManager, fileSignatureValidator, handoverRepository);
 		ReflectionTestUtils.setField(service, "maxFilesPerHandover", 30);
 		ReflectionTestUtils.setField(service, "maxTotalSizePerHandoverMb", 300L);
+		ReflectionTestUtils.setField(service, "maxTotalSizePerAccountMb", 1024L);
 		handoverId = UUID.randomUUID();
+		ownerId = UUID.randomUUID();
 	}
 
 	@Test
@@ -68,9 +75,26 @@ class RagIngestServiceQuotaTest {
 	}
 
 	@Test
-	void rejectsWhenTotalSizeQuotaExceeded() {
+	void rejectsWhenHandoverTotalSizeQuotaExceeded() {
 		when(sourceDocumentRepository.countByHandoverId(handoverId)).thenReturn(5L);
 		when(sourceDocumentRepository.sumFileSizeByHandoverId(handoverId)).thenReturn(299L * 1024 * 1024);
+		MockMultipartFile file = new MockMultipartFile("file", "doc.pdf", "application/pdf", new byte[2 * 1024 * 1024]);
+
+		assertThatThrownBy(() -> service.ingest(handoverId, file))
+				.isInstanceOf(BusinessException.class)
+				.extracting(e -> ((BusinessException) e).getErrorCode())
+				.isEqualTo(ErrorCode.AI_UPLOAD_QUOTA_EXCEEDED);
+
+		verify(s3FileStorage, never()).upload(any(), any(), any(), any());
+	}
+
+	@Test
+	void rejectsWhenAccountTotalSizeQuotaExceeded() {
+		Handover handover = Handover.create(ownerId, "테스트 인수인계");
+		when(sourceDocumentRepository.countByHandoverId(handoverId)).thenReturn(5L);
+		when(sourceDocumentRepository.sumFileSizeByHandoverId(handoverId)).thenReturn(0L);
+		when(handoverRepository.findById(handoverId)).thenReturn(java.util.Optional.of(handover));
+		when(sourceDocumentRepository.sumFileSizeByOwnerId(ownerId)).thenReturn(1023L * 1024 * 1024);
 		MockMultipartFile file = new MockMultipartFile("file", "doc.pdf", "application/pdf", new byte[2 * 1024 * 1024]);
 
 		assertThatThrownBy(() -> service.ingest(handoverId, file))
