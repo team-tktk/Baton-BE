@@ -114,3 +114,9 @@ app:
   discord:
     # 에러(ERROR) 로그를 디스코드 채널로 보낼 웹훅 URL. 비어있으면 전송 안 함(로컬 개발 기본값).
     error-webhook-url: ${DISCORD_ERROR_WEBHOOK_URL:}
+  upload:
+    # 파일 1개당 50MB 제한(spring.servlet.multipart.max-file-size)과는 별개로,
+    # 누적 개수·용량이 무제한으로 쌓이는 걸 막기 위함(S3 비용·임베딩 비용 남용 방지).
+    max-files-per-handover: 30
+    max-total-size-per-handover-mb: 300
+    max-total-size-per-account-mb: 1024   # 계정(인계자) 전체 기준. 파일 삭제하면 다시 풀림.

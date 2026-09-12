@@ -88,10 +88,13 @@ public class RagController {
 					- 확장자만으로 끝내지 않고 Content-Type과 파일 실제 내용(매직바이트)까지 확인한다.
 					  확장자를 위장한 실행파일이나 내용이 다른 파일은 거절된다.
 					- 파일명은 저장 전에 경로 구분자·상위 디렉토리 참조(`..`)·제어문자를 제거해서 저장한다.
-					- 파일당 최대 **50MB**(초과 시 `413`). 인수인계당 파일 개수 상한은 없다.
+					- 파일당 최대 **50MB**(초과 시 `413`).
+					- 인수인계 1건당 파일 최대 **30개**, 누적 용량 최대 **300MB**까지 업로드 가능.
+					- 계정(인계자) 전체 기준 누적 용량은 최대 **1GB**까지(파일 삭제 시 다시 풀림).
 					- 응답 `FileUploadResponse`: `sourceDocumentId`(=파일 목록의 `id`, 근거의 `sourceId`/`fileId`와 동일)·`fileName`·`status`.
 					- 처리 상태(`status`): 업로드 직후 `EXTRACTING` → 성공 시 `INDEXED`, 실패 시 `FAILED`(재처리 가능).
 					- 지원하지 않는 형식/내용 불일치/실행파일 감지: `400`(code=`AI_UNSUPPORTED_FILE_TYPE`)
+					- 개수/용량 상한 초과: `400`(code=`AI_UPLOAD_QUOTA_EXCEEDED`)
 					- 빈 파일: `400`(code=`BAD_REQUEST`) / 텍스트 추출 실패: `422`(code=`AI_FILE_PARSE_FAILED`, 상태 `FAILED`)
 					""")
 	@PostMapping(value = "/files", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)

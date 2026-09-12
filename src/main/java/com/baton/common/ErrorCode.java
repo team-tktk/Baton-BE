@@ -36,6 +36,7 @@ public enum ErrorCode {
 
 	// ── AI / RAG ────────────────────────────────────────────
 	AI_UNSUPPORTED_FILE_TYPE(HttpStatus.BAD_REQUEST, "지원하지 않는 파일 형식입니다"),
+	AI_UPLOAD_QUOTA_EXCEEDED(HttpStatus.BAD_REQUEST, "업로드 가능한 파일 개수 또는 용량을 초과했습니다"),
 	AI_FILE_PARSE_FAILED(HttpStatus.UNPROCESSABLE_ENTITY, "파일에서 텍스트를 추출하지 못했습니다"),
 	AI_SOURCE_DOCUMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 문서입니다"),
 	AI_NO_DOCUMENTS(HttpStatus.BAD_REQUEST, "분석할 업로드 파일이 없습니다"),

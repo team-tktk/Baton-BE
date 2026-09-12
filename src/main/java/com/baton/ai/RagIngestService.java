@@ -8,6 +8,7 @@ import java.util.stream.Collectors;
 
 import org.springframework.ai.document.Document;
 import org.springframework.ai.reader.tika.TikaDocumentReader;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.ai.transformer.splitter.TokenTextSplitter;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.core.io.ByteArrayResource;
@@ -18,6 +19,8 @@ import org.springframework.web.multipart.MultipartFile;
 import com.baton.ai.dto.DownloadedFile;
 import com.baton.common.BusinessException;
 import com.baton.common.ErrorCode;
+import com.baton.handover.Handover;
+import com.baton.handover.HandoverRepository;
 
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
@@ -63,6 +66,16 @@ public class RagIngestService {
 	private final S3FileStorage s3FileStorage;
 	private final EntityManager entityManager;
 	private final FileSignatureValidator fileSignatureValidator;
+	private final HandoverRepository handoverRepository;
+
+	@Value("${app.upload.max-files-per-handover}")
+	private int maxFilesPerHandover;
+
+	@Value("${app.upload.max-total-size-per-handover-mb}")
+	private long maxTotalSizePerHandoverMb;
+
+	@Value("${app.upload.max-total-size-per-account-mb}")
+	private long maxTotalSizePerAccountMb;
 
 	/**
 	 * RagController 클래스 전체에 @Transactional이 걸려있어서(권한 체크의 지연로딩 때문), 여기서
@@ -75,6 +88,7 @@ public class RagIngestService {
 			throw new BusinessException(ErrorCode.BAD_REQUEST, "빈 파일은 업로드할 수 없습니다.");
 		}
 		String extension = validateExtension(file.getOriginalFilename());
+		validateQuota(handoverId, file.getSize());
 		String safeFileName = sanitizeFileName(file.getOriginalFilename());
 
 		byte[] fileBytes;
@@ -129,6 +143,35 @@ public class RagIngestService {
 					"PDF, DOCX, XLSX, PPTX 파일만 업로드할 수 있습니다.");
 		}
 		return extension;
+	}
+
+	/**
+	 * 인수인계 1건당, 그리고 계정(인계자) 전체 기준 파일 개수·누적 용량 상한을 체크한다.
+	 * 파일 1개당 50MB 제한과는 별개로, S3/임베딩 비용이 무제한으로 쌓이는 걸 막기 위함.
+	 * 파일을 지우면 그만큼 다시 풀리는 구조라(하드 삭제), 계정이 영구히 막히지는 않는다.
+	 */
+	private void validateQuota(UUID handoverId, long newFileSize) {
+		long currentCount = sourceDocumentRepository.countByHandoverId(handoverId);
+		if (currentCount >= maxFilesPerHandover) {
+			throw new BusinessException(ErrorCode.AI_UPLOAD_QUOTA_EXCEEDED,
+					"이 인수인계에는 파일을 최대 %d개까지 업로드할 수 있습니다.".formatted(maxFilesPerHandover));
+		}
+
+		long maxHandoverSizeBytes = maxTotalSizePerHandoverMb * 1024 * 1024;
+		long currentHandoverSize = sourceDocumentRepository.sumFileSizeByHandoverId(handoverId);
+		if (currentHandoverSize + newFileSize > maxHandoverSizeBytes) {
+			throw new BusinessException(ErrorCode.AI_UPLOAD_QUOTA_EXCEEDED,
+					"이 인수인계의 업로드 총 용량은 최대 %dMB까지 가능합니다.".formatted(maxTotalSizePerHandoverMb));
+		}
+
+		Handover handover = handoverRepository.findById(handoverId)
+				.orElseThrow(() -> new BusinessException(ErrorCode.HANDOVER_NOT_FOUND));
+		long maxAccountSizeBytes = maxTotalSizePerAccountMb * 1024 * 1024;
+		long currentAccountSize = sourceDocumentRepository.sumFileSizeByOwnerId(handover.getOwnerId());
+		if (currentAccountSize + newFileSize > maxAccountSizeBytes) {
+			throw new BusinessException(ErrorCode.AI_UPLOAD_QUOTA_EXCEEDED,
+					"계정 전체 업로드 총 용량은 최대 %dMB까지 가능합니다.".formatted(maxTotalSizePerAccountMb));
+		}
 	}
 
 	/**
