@@ -1,6 +1,7 @@
 package com.baton.ai;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -38,12 +39,30 @@ public class RagIngestService {
 	/** 프론트/기획서에서 안내하는 지원 형식(PDF, DOCX, XLSX, PPTX)만 받는다. */
 	private static final Set<String> ALLOWED_EXTENSIONS = Set.of("pdf", "docx", "xlsx", "pptx");
 
+	/**
+	 * 클라이언트가 보낸 Content-Type이 확장자와 명백히 안 맞으면 걸러낸다. 다만 브라우저/클라이언트가
+	 * 신뢰할 수 없는 값을 보내는 경우가 흔해서(특히 OOXML), 여기서 통과해도 실제 방어는
+	 * FileSignatureValidator의 매직바이트 검증이 한다 — Content-Type이 없거나 애매하면 그쪽에 맡긴다.
+	 */
+	private static final Map<String, Set<String>> ALLOWED_MIME_TYPES = Map.of(
+			"pdf", Set.of("application/pdf"),
+			"docx", Set.of(
+					"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+					"application/octet-stream", "application/zip"),
+			"xlsx", Set.of(
+					"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+					"application/octet-stream", "application/zip"),
+			"pptx", Set.of(
+					"application/vnd.openxmlformats-officedocument.presentationml.presentation",
+					"application/octet-stream", "application/zip"));
+
 	private final SourceDocumentRepository sourceDocumentRepository;
 	private final SourceDocumentPersistence sourceDocumentPersistence;
 	private final VectorStore vectorStore;
 	private final TokenTextSplitter tokenTextSplitter;
 	private final S3FileStorage s3FileStorage;
 	private final EntityManager entityManager;
+	private final FileSignatureValidator fileSignatureValidator;
 
 	/**
 	 * RagController 클래스 전체에 @Transactional이 걸려있어서(권한 체크의 지연로딩 때문), 여기서
@@ -55,7 +74,8 @@ public class RagIngestService {
 		if (file == null || file.isEmpty()) {
 			throw new BusinessException(ErrorCode.BAD_REQUEST, "빈 파일은 업로드할 수 없습니다.");
 		}
-		validateExtension(file.getOriginalFilename());
+		String extension = validateExtension(file.getOriginalFilename());
+		String safeFileName = sanitizeFileName(file.getOriginalFilename());
 
 		byte[] fileBytes;
 		try {
@@ -64,10 +84,13 @@ public class RagIngestService {
 			throw new BusinessException(ErrorCode.AI_FILE_PARSE_FAILED);
 		}
 
-		String s3Key = s3FileStorage.upload(handoverId, file.getOriginalFilename(), file.getContentType(), fileBytes);
+		validateMimeType(extension, file.getContentType());
+		fileSignatureValidator.validate(extension, fileBytes);
+
+		String s3Key = s3FileStorage.upload(handoverId, safeFileName, file.getContentType(), fileBytes);
 
 		SourceDocument sourceDocument = sourceDocumentPersistence.createInitial(
-				handoverId, file.getOriginalFilename(), file.getContentType(), file.getSize(), s3Key);
+				handoverId, safeFileName, file.getContentType(), file.getSize(), s3Key);
 
 		runPipeline(handoverId, sourceDocument, fileBytes);
 		return refreshed(sourceDocument);
@@ -99,12 +122,44 @@ public class RagIngestService {
 				.orElseThrow(() -> new BusinessException(ErrorCode.AI_SOURCE_DOCUMENT_NOT_FOUND));
 	}
 
-	private void validateExtension(String fileName) {
+	private String validateExtension(String fileName) {
 		String extension = extensionOf(fileName);
 		if (extension == null || !ALLOWED_EXTENSIONS.contains(extension)) {
 			throw new BusinessException(ErrorCode.AI_UNSUPPORTED_FILE_TYPE,
 					"PDF, DOCX, XLSX, PPTX 파일만 업로드할 수 있습니다.");
 		}
+		return extension;
+	}
+
+	/**
+	 * 클라이언트가 보낸 Content-Type이 확장자와 명백히 다르면 거절한다. 값이 없거나(null/blank)
+	 * 애매한 경우는 여기서 판단하지 않고 통과시킨다 — 진짜 판단은 매직바이트 검증이 한다.
+	 */
+	private void validateMimeType(String extension, String contentType) {
+		if (contentType == null || contentType.isBlank()) {
+			return;
+		}
+		Set<String> allowed = ALLOWED_MIME_TYPES.get(extension);
+		String normalized = contentType.split(";")[0].trim().toLowerCase();
+		if (allowed != null && !allowed.contains(normalized)) {
+			throw new BusinessException(ErrorCode.AI_UNSUPPORTED_FILE_TYPE,
+					"요청한 파일 형식(%s)이 %s 확장자와 맞지 않습니다.".formatted(contentType, extension.toUpperCase()));
+		}
+	}
+
+	/**
+	 * 경로 구분자·상위 디렉토리 참조(..)·제어문자를 제거해서, 파일명이 S3 저장 키나 로그에
+	 * 그대로 들어가도 안전하게 만든다. 정상적인 한글/영문 파일명은 그대로 통과한다.
+	 */
+	private String sanitizeFileName(String rawFileName) {
+		if (rawFileName == null || rawFileName.isBlank()) {
+			return "file";
+		}
+		String name = rawFileName.replace('\\', '/');
+		name = name.substring(name.lastIndexOf('/') + 1);
+		name = name.replaceAll("\\p{Cntrl}", "");
+		name = name.replace("..", "_");
+		return name.isBlank() ? "file" : name;
 	}
 
 	private String extensionOf(String fileName) {

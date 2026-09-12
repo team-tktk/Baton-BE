@@ -84,11 +84,14 @@ public class RagController {
 			description = """
 					`multipart/form-data`(파트명 `file`)로 업로드하면 원본을 S3에 저장하고 텍스트를 추출해 벡터스토어에 인덱싱한다. 인계자만 가능.
 
-					- 허용 확장자: `pdf`, `docx`, `xlsx`, `pptx`(대소문자 무시, 확장자로 판별). MIME은 저장만 하고 검증 기준은 아니다.
+					- 허용 확장자: `pdf`, `docx`, `xlsx`, `pptx`(대소문자 무시, 확장자로 1차 판별).
+					- 확장자만으로 끝내지 않고 Content-Type과 파일 실제 내용(매직바이트)까지 확인한다.
+					  확장자를 위장한 실행파일이나 내용이 다른 파일은 거절된다.
+					- 파일명은 저장 전에 경로 구분자·상위 디렉토리 참조(`..`)·제어문자를 제거해서 저장한다.
 					- 파일당 최대 **50MB**(초과 시 `413`). 인수인계당 파일 개수 상한은 없다.
 					- 응답 `FileUploadResponse`: `sourceDocumentId`(=파일 목록의 `id`, 근거의 `sourceId`/`fileId`와 동일)·`fileName`·`status`.
 					- 처리 상태(`status`): 업로드 직후 `EXTRACTING` → 성공 시 `INDEXED`, 실패 시 `FAILED`(재처리 가능).
-					- 지원하지 않는 형식: `400`(code=`AI_UNSUPPORTED_FILE_TYPE`)
+					- 지원하지 않는 형식/내용 불일치/실행파일 감지: `400`(code=`AI_UNSUPPORTED_FILE_TYPE`)
 					- 빈 파일: `400`(code=`BAD_REQUEST`) / 텍스트 추출 실패: `422`(code=`AI_FILE_PARSE_FAILED`, 상태 `FAILED`)
 					""")
 	@PostMapping(value = "/files", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
