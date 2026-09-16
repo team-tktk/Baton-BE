@@ -62,7 +62,9 @@ public enum ErrorCode {
 	MASKING_CANDIDATE_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 마스킹 항목입니다"),
 	MASKING_INVALID_RANGE(HttpStatus.BAD_REQUEST, "마스킹 구간이 문서 범위를 벗어났습니다"),
 	MASKING_RANGE_OVERLAP(HttpStatus.CONFLICT, "이미 마스킹 항목이 있는 구간입니다"),
-	MASKING_CANDIDATE_NOT_DELETABLE(HttpStatus.CONFLICT, "자동으로 찾은 항목은 삭제할 수 없습니다. 체크를 해제해주세요");
+	MASKING_CANDIDATE_NOT_DELETABLE(HttpStatus.CONFLICT, "자동으로 찾은 항목은 삭제할 수 없습니다. 체크를 해제해주세요"),
+	MASKING_REVIEW_INCOMPLETE(HttpStatus.CONFLICT, "확인하지 않은 마스킹 항목이 있습니다"),
+	MASKING_NOT_CONFIRMED(HttpStatus.CONFLICT, "마스킹 검수를 확정하지 않은 파일이 있습니다");
 
 	private final HttpStatus status;
 	private final String message;

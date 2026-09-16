@@ -2,15 +2,27 @@ package com.baton.ai;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+
+import jakarta.persistence.LockModeType;
 
 public interface SourceDocumentRepository extends JpaRepository<SourceDocument, UUID> {
 
 	List<SourceDocument> findAllByHandoverId(UUID handoverId);
+
+	/** 마스킹 검수 확정이 동시에 두 번 처리되지 않도록 파일 행을 쓰기 잠금으로 읽는다. */
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("SELECT s FROM SourceDocument s WHERE s.id = :id")
+	Optional<SourceDocument> findByIdForUpdate(@Param("id") UUID id);
+
+	/** 분석 시작 전 — 마스킹 검수를 확정하지 않은 파일이 있는지. */
+	boolean existsByHandoverIdAndStatusIn(UUID handoverId, Collection<SourceDocumentStatus> statuses);
 
 	/** 상세 화면 등 단건 인수인계의 첨부 파일 개수. */
 	long countByHandoverId(UUID handoverId);

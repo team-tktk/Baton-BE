@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import org.hibernate.annotations.DynamicUpdate;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -26,8 +27,13 @@ import lombok.NoArgsConstructor;
  * 인수인계(handover)에 업로드되어 RAG 인덱싱 대상이 된 원본 파일 한 건.
  * 실제 파일 바이너리는 저장하지 않고(별도 스토리지 담당 영역), 인덱싱 상태와
  * 벡터 검색 결과를 사람이 읽을 근거(citation)로 되짚어주기 위한 메타데이터만 가진다.
+ *
+ * @DynamicUpdate: 바뀐 컬럼만 UPDATE 한다. 없으면 상태만 바꿔도 extracted_text(@Lob)를 매번 다시 써서
+ * PostgreSQL Large Object 복사본이 계속 쌓인다(로컬에서 확인함). 텍스트를 바꾸는 경우의 이전 객체 정리는
+ * LargeObjectCleaner가 맡는다.
  */
 @Entity
+@DynamicUpdate
 @Table(name = "source_documents")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
@@ -102,6 +108,34 @@ public class SourceDocument {
 		this.status = SourceDocumentStatus.MASKING_REVIEW;
 		this.extractedText = extractedText;
 		this.updatedAt = Instant.now();
+	}
+
+	/**
+	 * 사용자가 검수를 확정했다. 원문을 마스킹된 텍스트로 바꾸고 임베딩을 기다린다.
+	 * 이후 분석·초안 생성은 이 마스킹된 텍스트만 읽는다.
+	 */
+	public void confirmMasking(String maskedText) {
+		this.status = SourceDocumentStatus.INDEXING;
+		this.extractedText = maskedText;
+		this.maskingConfirmedAt = Instant.now();
+		this.updatedAt = this.maskingConfirmedAt;
+	}
+
+	/** 확정된 파일의 임베딩을 (다시) 시작한다. 텍스트는 이미 마스킹되어 있다. */
+	public void markIndexing() {
+		this.status = SourceDocumentStatus.INDEXING;
+		this.updatedAt = Instant.now();
+	}
+
+	/** 텍스트는 그대로 두고 인덱싱 완료만 기록한다(확정된 파일용). */
+	public void markIndexed(List<String> chunkIds) {
+		this.status = SourceDocumentStatus.INDEXED;
+		this.chunkIds = chunkIds;
+		this.updatedAt = Instant.now();
+	}
+
+	public boolean isMaskingConfirmed() {
+		return maskingConfirmedAt != null;
 	}
 
 	public void markFailed() {

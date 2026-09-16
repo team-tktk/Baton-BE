@@ -66,6 +66,8 @@ class RagIngestServiceMaskingTest {
 	private HandoverRepository handoverRepository;
 	@Mock
 	private MaskingCandidateRepository maskingCandidateRepository;
+	@Mock
+	private LargeObjectCleaner largeObjectCleaner;
 
 	@Captor
 	private ArgumentCaptor<List<MaskingCandidate>> candidatesCaptor;
@@ -80,8 +82,8 @@ class RagIngestServiceMaskingTest {
 	@BeforeEach
 	void setUp() throws IOException {
 		service = new RagIngestService(sourceDocumentRepository, sourceDocumentPersistence,
-				vectorStore, new TokenTextSplitter(), s3FileStorage, entityManager, fileSignatureValidator,
-				handoverRepository, new MaskingDetector(), maskingCandidateRepository);
+				vectorStore, TokenTextSplitter.builder().build(), s3FileStorage, entityManager, fileSignatureValidator,
+				handoverRepository, new MaskingDetector(), maskingCandidateRepository, largeObjectCleaner);
 		ReflectionTestUtils.setField(service, "maxFilesPerHandover", 30);
 		ReflectionTestUtils.setField(service, "maxTotalSizePerHandoverMb", 300L);
 		ReflectionTestUtils.setField(service, "maxTotalSizePerAccountMb", 1024L);
