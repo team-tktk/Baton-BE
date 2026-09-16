@@ -47,7 +47,15 @@ public enum ErrorCode {
 	AI_QUESTIONS_INCOMPLETE(HttpStatus.CONFLICT, "답변하지 않은 확인 질문이 있습니다"),
 	AI_ANALYSIS_JOB_NOT_FOUND(HttpStatus.NOT_FOUND, "분석 작업을 찾을 수 없습니다"),
 	AI_ANALYSIS_ALREADY_RUNNING(HttpStatus.CONFLICT, "이미 분석 작업이 진행 중입니다"),
-	AI_ANALYSIS_RETRY_NOT_ALLOWED(HttpStatus.CONFLICT, "실패한 분석 작업만 재시도할 수 있습니다");
+	AI_ANALYSIS_RETRY_NOT_ALLOWED(HttpStatus.CONFLICT, "실패한 분석 작업만 재시도할 수 있습니다"),
+	AI_DRAFT_REVISION_CONFLICT(HttpStatus.CONFLICT, "문서가 그사이 변경되었습니다. 최신 문서를 확인한 뒤 다시 시도해주세요"),
+
+	// ── 준비도(readiness) ───────────────────────────────────
+	READINESS_NOT_EVALUATED(HttpStatus.NOT_FOUND, "아직 준비도 평가 결과가 없습니다"),
+	READINESS_STALE(HttpStatus.CONFLICT, "문서가 바뀌어 준비도를 다시 평가해야 합니다"),
+	READINESS_ITEM_SUFFICIENT(HttpStatus.CONFLICT, "이미 충분한 항목은 보완할 필요가 없습니다"),
+	READINESS_FIX_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 보완안입니다"),
+	READINESS_FIX_INVALID_STATE(HttpStatus.CONFLICT, "현재 상태의 보완안에는 할 수 없는 작업입니다");
 
 	private final HttpStatus status;
 	private final String message;

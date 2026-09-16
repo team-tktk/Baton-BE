@@ -151,11 +151,19 @@ public class RagAnalysisService {
 		return draft.getSuggestedQuestions();
 	}
 
-	/** 사람이 초안을 직접 수정한다(자동저장). 필드 단위가 아니라 content 전체를 교체한다. */
+	/**
+	 * 사람이 초안을 직접 수정한다(자동저장). 필드 단위가 아니라 content 전체를 교체한다.
+	 * baseRevision이 있으면 현재 버전과 같을 때만 저장한다.
+	 */
 	@Transactional
-	public HandoverDraftResponse updateDraft(UUID handoverId, HandoverDraftContent content) {
-		HandoverDraft draft = handoverDraftRepository.findByHandoverId(handoverId)
+	public HandoverDraftResponse updateDraft(UUID handoverId, HandoverDraftContent content, Long baseRevision) {
+		HandoverDraft draft = (baseRevision == null
+				? handoverDraftRepository.findByHandoverId(handoverId)
+				: handoverDraftRepository.findByHandoverIdForUpdate(handoverId))
 				.orElseThrow(() -> new BusinessException(ErrorCode.AI_DRAFT_NOT_FOUND));
+		if (baseRevision != null && baseRevision != draft.getRevision()) {
+			throw new BusinessException(ErrorCode.AI_DRAFT_REVISION_CONFLICT);
+		}
 		draft.replaceContent(content);
 		return HandoverDraftResponse.from(draft);
 	}

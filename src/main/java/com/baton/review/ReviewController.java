@@ -45,8 +45,8 @@ public class ReviewController {
 
 	@Operation(summary = "검토 상세 조회",
 			description = """
-					검토 화면 한 번에 필요한 문서 초안(`document`)·첨부(`attachments`)·체크리스트(`checklist`)·코멘트(`comments`)와 상태를 함께 반환한다.
-					초안이 아직 없으면 `document`는 null. 참여자(인계자/인수자/관리자) 모두 조회 가능.
+					검토 화면 한 번에 필요한 문서 초안(document)·첨부(attachments)·체크리스트(checklist)·코멘트(comments)와 상태를 함께 반환한다.
+					초안이 아직 없으면 document는 null. 참여자(인계자/인수자/관리자) 모두 조회 가능.
 					""")
 	@GetMapping("/review")
 	public ReviewDetailResponse getReview(
@@ -58,7 +58,7 @@ public class ReviewController {
 	@Operation(summary = "검토 체크리스트 저장",
 			description = """
 					체크리스트를 통째로 교체한다(부분 수정 아님, 보낸 배열이 전체가 됨). 관리자만 가능.
-					승인하려면 이 체크리스트가 비어 있지 않고 모든 항목이 체크돼 있어야 한다(→ `POST /approve` 참고).
+					승인하려면 이 체크리스트가 비어 있지 않고 모든 항목이 체크돼 있어야 한다(→ POST /approve 참고).
 					""")
 	@PatchMapping("/review/checklist")
 	public List<ChecklistItemResponse> updateChecklist(
@@ -78,7 +78,7 @@ public class ReviewController {
 	}
 
 	@Operation(summary = "코멘트 작성",
-			description = "관리자만 작성 가능. 성공: `201 Created` + 생성된 코멘트.")
+			description = "관리자만 작성 가능. 성공: 201 Created + 생성된 코멘트.")
 	@PostMapping("/comments")
 	@ResponseStatus(HttpStatus.CREATED)
 	public CommentResponse addComment(
@@ -89,7 +89,7 @@ public class ReviewController {
 	}
 
 	@Operation(summary = "본인 코멘트 수정",
-			description = "작성자 본인만 수정 가능. 타인 코멘트: `403`(code=`HANDOVER_FORBIDDEN`).")
+			description = "작성자 본인만 수정 가능. 타인 코멘트: 403(code=HANDOVER_FORBIDDEN).")
 	@PatchMapping("/comments/{commentId}")
 	public CommentResponse editComment(
 			@Parameter(description = "인수인계 id") @PathVariable UUID handoverId,
@@ -100,7 +100,7 @@ public class ReviewController {
 	}
 
 	@Operation(summary = "본인 코멘트 삭제",
-			description = "작성자 본인만 삭제 가능. 성공: `204 No Content`. 타인 코멘트: `403`(code=`HANDOVER_FORBIDDEN`).")
+			description = "작성자 본인만 삭제 가능. 성공: 204 No Content. 타인 코멘트: 403(code=HANDOVER_FORBIDDEN).")
 	@DeleteMapping("/comments/{commentId}")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void deleteComment(
@@ -112,13 +112,13 @@ public class ReviewController {
 
 	@Operation(summary = "인계자에게 보완 요청",
 			description = """
-					검토 후 인계자에게 수정을 요청한다(`PENDING_REVIEW` → `REVISION_REQUESTED`). 관리자만 가능.
+					검토 후 인계자에게 수정을 요청한다(PENDING_REVIEW → REVISION_REQUESTED). 관리자만 가능.
 
-					**`reason`(보완 사유)은 선택값이다.** 요청 바디 자체도 생략 가능:
-					- `reason`을 보내면 보완 사유를 **코멘트로 함께 기록**한다(코멘트 목록에 남아 인계자가 확인).
-					- 생략하면 상태만 전이하고 별도 코멘트는 남기지 않는다. 기존에 남긴 코멘트를 사유로 쓰는 흐름이면 `reason` 없이 호출하면 된다.
-					- 항상 사유를 남기게 하려면 프론트에서 `reason`을 필수로 받아 전달하는 방식을 권장(서버는 강제하지 않음).
-					- 검토 대기 상태가 아니면: `409`(code=`HANDOVER_INVALID_STATE`)
+					**reason(보완 사유)은 선택값이다.** 요청 바디 자체도 생략 가능:
+					- reason을 보내면 보완 사유를 **코멘트로 함께 기록**한다(코멘트 목록에 남아 인계자가 확인).
+					- 생략하면 상태만 전이하고 별도 코멘트는 남기지 않는다. 기존에 남긴 코멘트를 사유로 쓰는 흐름이면 reason 없이 호출하면 된다.
+					- 항상 사유를 남기게 하려면 프론트에서 reason을 필수로 받아 전달하는 방식을 권장(서버는 강제하지 않음).
+					- 검토 대기 상태가 아니면: 409(code=HANDOVER_INVALID_STATE)
 					""")
 	@PostMapping("/request-revision")
 	public HandoverResponse requestRevision(
@@ -131,9 +131,9 @@ public class ReviewController {
 
 	@Operation(summary = "관리자 최종 승인",
 			description = """
-					검토를 마치고 최종 승인한다(`PENDING_REVIEW` → `APPROVED`). 관리자만 가능.
-					**체크리스트가 비어 있거나 미완료 항목이 있으면 승인할 수 없다**: `409`(code=`REVIEW_CHECKLIST_INCOMPLETE`).
-					- 검토 대기 상태가 아니면: `409`(code=`HANDOVER_INVALID_STATE`)
+					검토를 마치고 최종 승인한다(PENDING_REVIEW → APPROVED). 관리자만 가능.
+					**체크리스트가 비어 있거나 미완료 항목이 있으면 승인할 수 없다**: 409(code=REVIEW_CHECKLIST_INCOMPLETE).
+					- 검토 대기 상태가 아니면: 409(code=HANDOVER_INVALID_STATE)
 					""")
 	@PostMapping("/approve")
 	public HandoverResponse approve(

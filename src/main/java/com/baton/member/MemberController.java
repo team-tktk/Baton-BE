@@ -31,8 +31,8 @@ public class MemberController {
 	@Operation(summary = "구성원 검색",
 			description = """
 					이름 또는 팀으로 부분검색(대소문자 무시)한다. 인수인계 생성 시 인수자/관리자를 고르는 데 쓴다.
-					`query`가 비면 **전체 구성원**을 커서 순으로 반환한다 → 프론트는 검색어 없이 호출해 드롭다운에 전체를 띄우면 된다.
-					**로그인 사용자 본인은 항상 결과에서 제외**된다(자기 자신을 인수자/관리자로 못 고르게). 결과 항목의 `id`를 `recipientIds`/`reviewerIds`에 사용한다.
+					query가 비면 **전체 구성원**을 커서 순으로 반환한다 → 프론트는 검색어 없이 호출해 드롭다운에 전체를 띄우면 된다.
+					**로그인 사용자 본인은 항상 결과에서 제외**된다(자기 자신을 인수자/관리자로 못 고르게). 결과 항목의 id를 recipientIds/reviewerIds에 사용한다.
 					""")
 	@GetMapping
 	public MemberPageResponse search(
