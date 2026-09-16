@@ -67,6 +67,10 @@ public class SourceDocument {
 	@Column(name = "chunk_ids")
 	private List<String> chunkIds;
 
+	/** 사용자가 마스킹 검수를 확정한 시각. 검수 없이 처리된 파일(기능 도입 전, 검수 꺼짐)은 null. */
+	@Column(name = "masking_confirmed_at")
+	private Instant maskingConfirmedAt;
+
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private Instant createdAt;
 
@@ -90,6 +94,13 @@ public class SourceDocument {
 		this.status = SourceDocumentStatus.INDEXED;
 		this.extractedText = extractedText;
 		this.chunkIds = chunkIds;
+		this.updatedAt = Instant.now();
+	}
+
+	/** 텍스트 추출과 후보 탐지까지 끝나고 사용자 검수를 기다린다. 이 시점의 extractedText는 마스킹 전 원문이다. */
+	public void markMaskingReview(String extractedText) {
+		this.status = SourceDocumentStatus.MASKING_REVIEW;
+		this.extractedText = extractedText;
 		this.updatedAt = Instant.now();
 	}
 

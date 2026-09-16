@@ -22,6 +22,8 @@ import com.baton.common.BusinessException;
 import com.baton.common.ErrorCode;
 import com.baton.handover.Handover;
 import com.baton.handover.HandoverRepository;
+import com.baton.masking.MaskingCandidateRepository;
+import com.baton.masking.MaskingDetector;
 
 import jakarta.persistence.EntityManager;
 
@@ -45,6 +47,8 @@ class RagIngestServiceQuotaTest {
 	private FileSignatureValidator fileSignatureValidator;
 	@Mock
 	private HandoverRepository handoverRepository;
+	@Mock
+	private MaskingCandidateRepository maskingCandidateRepository;
 
 	private RagIngestService service;
 	private UUID handoverId;
@@ -53,7 +57,8 @@ class RagIngestServiceQuotaTest {
 	@BeforeEach
 	void setUp() {
 		service = new RagIngestService(sourceDocumentRepository, sourceDocumentPersistence,
-				vectorStore, tokenTextSplitter, s3FileStorage, entityManager, fileSignatureValidator, handoverRepository);
+				vectorStore, tokenTextSplitter, s3FileStorage, entityManager, fileSignatureValidator, handoverRepository,
+				new MaskingDetector(), maskingCandidateRepository);
 		ReflectionTestUtils.setField(service, "maxFilesPerHandover", 30);
 		ReflectionTestUtils.setField(service, "maxTotalSizePerHandoverMb", 300L);
 		ReflectionTestUtils.setField(service, "maxTotalSizePerAccountMb", 1024L);

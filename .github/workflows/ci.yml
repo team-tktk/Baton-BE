@@ -34,3 +34,12 @@ jobs:
           --tests 'com.baton.ai.dto.QuestionAnswerRequestTest'
           --tests 'com.baton.handover.HandoverAnalysisStateTest'
           --no-daemon
+
+      - name: Masking review unit tests
+        run: >-
+          ./gradlew test
+          --tests 'com.baton.masking.MaskingDetectorTest'
+          --tests 'com.baton.masking.MaskingCandidateTest'
+          --tests 'com.baton.ai.RagIngestServiceMaskingTest'
+          --tests 'com.baton.ai.RagIngestServiceQuotaTest'
+          --no-daemon
