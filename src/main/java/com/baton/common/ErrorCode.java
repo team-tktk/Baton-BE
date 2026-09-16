@@ -55,7 +55,14 @@ public enum ErrorCode {
 	READINESS_STALE(HttpStatus.CONFLICT, "문서가 바뀌어 준비도를 다시 평가해야 합니다"),
 	READINESS_ITEM_SUFFICIENT(HttpStatus.CONFLICT, "이미 충분한 항목은 보완할 필요가 없습니다"),
 	READINESS_FIX_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 보완안입니다"),
-	READINESS_FIX_INVALID_STATE(HttpStatus.CONFLICT, "현재 상태의 보완안에는 할 수 없는 작업입니다");
+	READINESS_FIX_INVALID_STATE(HttpStatus.CONFLICT, "현재 상태의 보완안에는 할 수 없는 작업입니다"),
+
+	// ── 마스킹 검수(masking) ────────────────────────────────
+	MASKING_NOT_IN_REVIEW(HttpStatus.CONFLICT, "마스킹 검수 중인 파일이 아닙니다"),
+	MASKING_CANDIDATE_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 마스킹 항목입니다"),
+	MASKING_INVALID_RANGE(HttpStatus.BAD_REQUEST, "마스킹 구간이 문서 범위를 벗어났습니다"),
+	MASKING_RANGE_OVERLAP(HttpStatus.CONFLICT, "이미 마스킹 항목이 있는 구간입니다"),
+	MASKING_CANDIDATE_NOT_DELETABLE(HttpStatus.CONFLICT, "자동으로 찾은 항목은 삭제할 수 없습니다. 체크를 해제해주세요");
 
 	private final HttpStatus status;
 	private final String message;
