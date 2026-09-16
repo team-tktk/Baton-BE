@@ -3,6 +3,7 @@ package com.baton.ai;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.http.ContentDisposition;
@@ -46,6 +47,7 @@ import com.baton.common.ErrorCode;
 import com.baton.handover.Handover;
 import com.baton.handover.HandoverPermission;
 import com.baton.handover.HandoverRepository;
+import com.baton.masking.MaskingService;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -83,6 +85,7 @@ public class RagController {
 	private final HandoverRepository handoverRepository;
 	private final HandoverPermission handoverPermission;
 	private final AuthService authService;
+	private final MaskingService maskingService;
 
 	@Operation(summary = "인수인계 파일 업로드",
 			description = """
@@ -118,7 +121,8 @@ public class RagController {
 	@Operation(summary = "업로드된 파일 목록 조회",
 			description = """
 					인수인계에 첨부된 파일 메타데이터(FileMetadataResponse) 배열을 반환한다. 참여자 모두 가능.
-					각 항목: id(=업로드 응답의 sourceDocumentId, 근거의 sourceId/fileId와 동일)·fileName·mimeType·size(바이트)·status·createdAt.
+					각 항목: id(=업로드 응답의 sourceDocumentId, 근거의 sourceId/fileId와 동일)·fileName·mimeType·size(바이트)·status·remainingReviewCount·createdAt.
+					remainingReviewCount: 마스킹 검수에서 아직 확인하지 않은 항목 수(검수 대기 파일이 아니면 0).
 					status: EXTRACTING(처리 중)·MASKING_REVIEW(마스킹 검수 대기)·INDEXING(임베딩 중)·INDEXED(완료)·FAILED(실패).
 					""")
 	@GetMapping("/files")
@@ -126,8 +130,9 @@ public class RagController {
 		Handover handover = loadHandover(handoverId);
 		handoverPermission.requireViewer(handover, currentUserId(authentication));
 
+		Map<UUID, Long> remainingReviewCounts = maskingService.countPendingReviewByFile(handoverId);
 		return ragIngestService.listByHandover(handoverId).stream()
-				.map(FileMetadataResponse::from)
+				.map(file -> FileMetadataResponse.from(file, remainingReviewCounts.getOrDefault(file.getId(), 0L)))
 				.toList();
 	}
 

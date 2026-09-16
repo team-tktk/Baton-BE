@@ -40,6 +40,7 @@ jobs:
           ./gradlew test
           --tests 'com.baton.masking.MaskingDetectorTest'
           --tests 'com.baton.masking.MaskingCandidateTest'
+          --tests 'com.baton.masking.MaskingServiceTest'
           --tests 'com.baton.ai.RagIngestServiceMaskingTest'
           --tests 'com.baton.ai.RagIngestServiceQuotaTest'
           --no-daemon
