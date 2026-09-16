@@ -97,6 +97,7 @@ public class RagController {
 					- 계정(인계자) 전체 기준 누적 용량은 최대 **1GB**까지(파일 삭제 시 다시 풀림).
 					- 응답 FileUploadResponse: sourceDocumentId(=파일 목록의 id, 근거의 sourceId/fileId와 동일)·fileName·status.
 					- 처리 상태(status): 업로드 직후 EXTRACTING → 성공 시 INDEXED, 실패 시 FAILED(재처리 가능).
+					  마스킹 검수가 켜진 서버에서는 성공 시 MASKING_REVIEW(검수 대기)로 멈춘다.
 					- 지원하지 않는 형식/내용 불일치/실행파일 감지: 400(code=AI_UNSUPPORTED_FILE_TYPE)
 					- 개수/용량 상한 초과: 400(code=AI_UPLOAD_QUOTA_EXCEEDED)
 					- 빈 파일: 400(code=BAD_REQUEST) / 텍스트 추출 실패: 422(code=AI_FILE_PARSE_FAILED, 상태 FAILED)
@@ -118,7 +119,7 @@ public class RagController {
 			description = """
 					인수인계에 첨부된 파일 메타데이터(FileMetadataResponse) 배열을 반환한다. 참여자 모두 가능.
 					각 항목: id(=업로드 응답의 sourceDocumentId, 근거의 sourceId/fileId와 동일)·fileName·mimeType·size(바이트)·status·createdAt.
-					status: EXTRACTING(처리 중)·INDEXED(완료)·FAILED(실패).
+					status: EXTRACTING(처리 중)·MASKING_REVIEW(마스킹 검수 대기)·INDEXING(임베딩 중)·INDEXED(완료)·FAILED(실패).
 					""")
 	@GetMapping("/files")
 	public List<FileMetadataResponse> listFiles(@PathVariable UUID handoverId, Authentication authentication) {
@@ -161,7 +162,7 @@ public class RagController {
 	@Operation(summary = "업로드된 파일 삭제",
 			description = """
 					첨부 파일을 삭제한다(S3 원본·메타데이터·벡터스토어 인덱스). 인계자만 가능. 성공: 204 No Content.
-					- 삭제 가능 상태: INDEXED 또는 FAILED. 처리 중(EXTRACTING) 파일은 삭제 불가: 409(code=AI_SOURCE_DOCUMENT_PROCESSING).
+					- 삭제 가능 상태: MASKING_REVIEW·INDEXED·FAILED. 처리 중(EXTRACTING·INDEXING) 파일은 삭제 불가: 409(code=AI_SOURCE_DOCUMENT_PROCESSING).
 					- 없는 파일: 404(code=AI_SOURCE_DOCUMENT_NOT_FOUND)
 					""")
 	@DeleteMapping("/files/{fileId}")

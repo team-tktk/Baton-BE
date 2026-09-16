@@ -21,6 +21,9 @@ import com.baton.common.BusinessException;
 import com.baton.common.ErrorCode;
 import com.baton.handover.Handover;
 import com.baton.handover.HandoverRepository;
+import com.baton.masking.MaskingCandidate;
+import com.baton.masking.MaskingCandidateRepository;
+import com.baton.masking.MaskingDetector;
 
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
@@ -67,6 +70,11 @@ public class RagIngestService {
 	private final EntityManager entityManager;
 	private final FileSignatureValidator fileSignatureValidator;
 	private final HandoverRepository handoverRepository;
+	private final MaskingDetector maskingDetector;
+	private final MaskingCandidateRepository maskingCandidateRepository;
+
+	@Value("${app.masking.enabled}")
+	private boolean maskingEnabled;
 
 	@Value("${app.upload.max-files-per-handover}")
 	private int maxFilesPerHandover;
@@ -223,6 +231,12 @@ public class RagIngestService {
 					.map(Document::getText)
 					.collect(Collectors.joining("\n\n"));
 
+			// 마스킹 검수를 켜면 임베딩(= 원문을 OpenAI로 전송) 전에 멈추고 사용자 확정을 기다린다.
+			if (maskingEnabled) {
+				holdForMaskingReview(handoverId, sourceDocument, extractedText);
+				return;
+			}
+
 			List<Document> chunks = tokenTextSplitter.apply(rawDocuments);
 			attachMetadata(chunks, handoverId, sourceDocument);
 
@@ -237,6 +251,13 @@ public class RagIngestService {
 			sourceDocumentPersistence.markFailed(sourceDocument.getId());
 			throw new BusinessException(ErrorCode.AI_FILE_PARSE_FAILED);
 		}
+	}
+
+	private void holdForMaskingReview(UUID handoverId, SourceDocument sourceDocument, String extractedText) {
+		List<MaskingCandidate> candidates = maskingDetector.detect(extractedText).stream()
+				.map(detected -> MaskingCandidate.detected(sourceDocument.getId(), handoverId, detected, extractedText))
+				.toList();
+		sourceDocumentPersistence.markMaskingReview(sourceDocument.getId(), extractedText, candidates);
 	}
 
 	private List<Document> extractText(byte[] fileBytes, String fileName) throws Exception {
@@ -290,13 +311,15 @@ public class RagIngestService {
 	@Transactional
 	public void delete(UUID handoverId, UUID fileId) {
 		SourceDocument sourceDocument = findOwned(handoverId, fileId);
-		if (sourceDocument.getStatus() == SourceDocumentStatus.EXTRACTING) {
+		if (sourceDocument.getStatus() == SourceDocumentStatus.EXTRACTING
+				|| sourceDocument.getStatus() == SourceDocumentStatus.INDEXING) {
 			throw new BusinessException(ErrorCode.AI_SOURCE_DOCUMENT_PROCESSING);
 		}
 
 		if (sourceDocument.getChunkIds() != null && !sourceDocument.getChunkIds().isEmpty()) {
 			vectorStore.delete(sourceDocument.getChunkIds());
 		}
+		maskingCandidateRepository.deleteAllBySourceDocumentId(fileId);
 		s3FileStorage.delete(sourceDocument.getS3Key());
 		sourceDocumentRepository.delete(sourceDocument);
 	}

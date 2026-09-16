@@ -54,7 +54,7 @@ public class OpenApiConfig {
 			- **ParticipantRole**: RECIPIENT(인수자)·REVIEWER(관리자). 인계자는 참여자가 아니라 owner.
 			- **AnalysisJobStatus**(AI 분석 작업): QUEUED·PARSING·INDEXING·GENERATING_QUESTIONS·GENERATING_DRAFT = 진행 중,
 			  COMPLETED = 완료(종료), FAILED = 실패(종료). progress는 0~100 정수.
-			- **SourceDocumentStatus**(첨부 파일 처리): EXTRACTING(추출·임베딩 진행 중)·INDEXED(완료)·FAILED(실패 → 재처리 가능)
+			- **SourceDocumentStatus**(첨부 파일 처리): EXTRACTING(추출·임베딩 진행 중)·MASKING_REVIEW(마스킹 검수 대기)·INDEXING(검수 확정 후 임베딩 중)·INDEXED(완료)·FAILED(실패 → 재처리 가능)
 			- **ClarificationQuestionStatus**(확인 질문): PENDING(미응답)·ANSWERED(답변)·SKIPPED(건너뜀)
 			- **ClarificationQuestionType**: INTERVIEW(추가 정보 인터뷰)·CONFLICT(문서 간 충돌 해소)
 			- **ReadinessArea**(준비도 평가 영역): SCOPE(업무 범위)·PROCEDURE(실행 절차)·COMPLETION(완료 기준)·EXCEPTION(예외 대응)·
@@ -74,7 +74,7 @@ public class OpenApiConfig {
 			- 인수인계당 파일 개수: 별도 상한 없음(현재 무제한).
 			- 업로드 응답 FileUploadResponse.sourceDocumentId == 파일 목록 FileMetadataResponse.id == 근거 Citation.sourceId/fileId
 			  == 다운로드 경로의 {fileId}. **모두 같은 SourceDocument id다.**
-			- 삭제 가능 상태: 처리 중(EXTRACTING)이 아니면 삭제 가능. 처리 중 삭제는 409(code=AI_SOURCE_DOCUMENT_PROCESSING).
+			- 삭제 가능 상태: 처리 중(EXTRACTING·INDEXING)이 아니면 삭제 가능. 처리 중 삭제는 409(code=AI_SOURCE_DOCUMENT_PROCESSING).
 			- 다운로드: Content-Type은 저장된 MIME(없으면 application/octet-stream), Content-Disposition: attachment; filename&#42;=UTF-8''... 제공.
 
 			## AI 분석 폴링

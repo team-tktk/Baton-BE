@@ -7,6 +7,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.baton.masking.MaskingCandidate;
+import com.baton.masking.MaskingCandidateRepository;
+
 import lombok.RequiredArgsConstructor;
 
 /**
@@ -23,6 +26,7 @@ import lombok.RequiredArgsConstructor;
 public class SourceDocumentPersistence {
 
 	private final SourceDocumentRepository sourceDocumentRepository;
+	private final MaskingCandidateRepository maskingCandidateRepository;
 
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public SourceDocument createInitial(UUID handoverId, String fileName, String mimeType, long fileSize, String s3Key) {
@@ -34,6 +38,21 @@ public class SourceDocumentPersistence {
 		sourceDocumentRepository.findById(sourceDocumentId)
 				.ifPresent(doc -> {
 					doc.markIndexed(extractedText, chunkIds);
+					sourceDocumentRepository.save(doc);
+				});
+	}
+
+	/**
+	 * 후보 교체와 상태 변경을 한 트랜잭션으로 묶는다. 재처리(retry)로 다시 들어온 경우를 위해
+	 * 이전 후보를 먼저 지운다 — 원문이 새로 추출되면 예전 위치(offset)는 의미가 없다.
+	 */
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public void markMaskingReview(UUID sourceDocumentId, String extractedText, List<MaskingCandidate> candidates) {
+		sourceDocumentRepository.findById(sourceDocumentId)
+				.ifPresent(doc -> {
+					maskingCandidateRepository.deleteAllBySourceDocumentId(sourceDocumentId);
+					maskingCandidateRepository.saveAll(candidates);
+					doc.markMaskingReview(extractedText);
 					sourceDocumentRepository.save(doc);
 				});
 	}
