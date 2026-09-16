@@ -49,6 +49,10 @@ import com.baton.handover.HandoverRepository;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.ExampleObject;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -82,20 +86,20 @@ public class RagController {
 
 	@Operation(summary = "인수인계 파일 업로드",
 			description = """
-					`multipart/form-data`(파트명 `file`)로 업로드하면 원본을 S3에 저장하고 텍스트를 추출해 벡터스토어에 인덱싱한다. 인계자만 가능.
+					multipart/form-data(파트명 file)로 업로드하면 원본을 S3에 저장하고 텍스트를 추출해 벡터스토어에 인덱싱한다. 인계자만 가능.
 
-					- 허용 확장자: `pdf`, `docx`, `xlsx`, `pptx`(대소문자 무시, 확장자로 1차 판별).
+					- 허용 확장자: pdf, docx, xlsx, pptx(대소문자 무시, 확장자로 1차 판별).
 					- 확장자만으로 끝내지 않고 Content-Type과 파일 실제 내용(매직바이트)까지 확인한다.
 					  확장자를 위장한 실행파일이나 내용이 다른 파일은 거절된다.
-					- 파일명은 저장 전에 경로 구분자·상위 디렉토리 참조(`..`)·제어문자를 제거해서 저장한다.
-					- 파일당 최대 **50MB**(초과 시 `413`).
+					- 파일명은 저장 전에 경로 구분자·상위 디렉토리 참조(..)·제어문자를 제거해서 저장한다.
+					- 파일당 최대 **50MB**(초과 시 413).
 					- 인수인계 1건당 파일 최대 **30개**, 누적 용량 최대 **300MB**까지 업로드 가능.
 					- 계정(인계자) 전체 기준 누적 용량은 최대 **1GB**까지(파일 삭제 시 다시 풀림).
-					- 응답 `FileUploadResponse`: `sourceDocumentId`(=파일 목록의 `id`, 근거의 `sourceId`/`fileId`와 동일)·`fileName`·`status`.
-					- 처리 상태(`status`): 업로드 직후 `EXTRACTING` → 성공 시 `INDEXED`, 실패 시 `FAILED`(재처리 가능).
-					- 지원하지 않는 형식/내용 불일치/실행파일 감지: `400`(code=`AI_UNSUPPORTED_FILE_TYPE`)
-					- 개수/용량 상한 초과: `400`(code=`AI_UPLOAD_QUOTA_EXCEEDED`)
-					- 빈 파일: `400`(code=`BAD_REQUEST`) / 텍스트 추출 실패: `422`(code=`AI_FILE_PARSE_FAILED`, 상태 `FAILED`)
+					- 응답 FileUploadResponse: sourceDocumentId(=파일 목록의 id, 근거의 sourceId/fileId와 동일)·fileName·status.
+					- 처리 상태(status): 업로드 직후 EXTRACTING → 성공 시 INDEXED, 실패 시 FAILED(재처리 가능).
+					- 지원하지 않는 형식/내용 불일치/실행파일 감지: 400(code=AI_UNSUPPORTED_FILE_TYPE)
+					- 개수/용량 상한 초과: 400(code=AI_UPLOAD_QUOTA_EXCEEDED)
+					- 빈 파일: 400(code=BAD_REQUEST) / 텍스트 추출 실패: 422(code=AI_FILE_PARSE_FAILED, 상태 FAILED)
 					""")
 	@PostMapping(value = "/files", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
 	@ResponseStatus(HttpStatus.CREATED)
@@ -112,9 +116,9 @@ public class RagController {
 
 	@Operation(summary = "업로드된 파일 목록 조회",
 			description = """
-					인수인계에 첨부된 파일 메타데이터(`FileMetadataResponse`) 배열을 반환한다. 참여자 모두 가능.
-					각 항목: `id`(=업로드 응답의 `sourceDocumentId`, 근거의 `sourceId`/`fileId`와 동일)·`fileName`·`mimeType`·`size`(바이트)·`status`·`createdAt`.
-					`status`: `EXTRACTING`(처리 중)·`INDEXED`(완료)·`FAILED`(실패).
+					인수인계에 첨부된 파일 메타데이터(FileMetadataResponse) 배열을 반환한다. 참여자 모두 가능.
+					각 항목: id(=업로드 응답의 sourceDocumentId, 근거의 sourceId/fileId와 동일)·fileName·mimeType·size(바이트)·status·createdAt.
+					status: EXTRACTING(처리 중)·INDEXED(완료)·FAILED(실패).
 					""")
 	@GetMapping("/files")
 	public List<FileMetadataResponse> listFiles(@PathVariable UUID handoverId, Authentication authentication) {
@@ -128,10 +132,10 @@ public class RagController {
 
 	@Operation(summary = "업로드된 파일 원본 다운로드",
 			description = """
-					S3에 저장된 원본 파일을 바이트로 내려준다. 인수자/관리자가 첨부 원문(또는 근거 `citations[].fileId`)을 열 때 쓴다. 참여자 모두 가능.
-					- `Content-Type`: 저장된 MIME(없으면 `application/octet-stream`).
-					- `Content-Disposition`: `attachment; filename*=UTF-8''<파일명>`(원본 파일명, UTF-8 인코딩).
-					- 없는 파일: `404`(code=`AI_SOURCE_DOCUMENT_NOT_FOUND`)
+					S3에 저장된 원본 파일을 바이트로 내려준다. 인수자/관리자가 첨부 원문(또는 근거 citations[].fileId)을 열 때 쓴다. 참여자 모두 가능.
+					- Content-Type: 저장된 MIME(없으면 application/octet-stream).
+					- Content-Disposition: attachment; filename&#42;=UTF-8''&lt;파일명&gt;(원본 파일명, UTF-8 인코딩).
+					- 없는 파일: 404(code=AI_SOURCE_DOCUMENT_NOT_FOUND)
 					""")
 	@GetMapping("/files/{fileId}/download")
 	public ResponseEntity<byte[]> downloadFile(
@@ -156,9 +160,9 @@ public class RagController {
 
 	@Operation(summary = "업로드된 파일 삭제",
 			description = """
-					첨부 파일을 삭제한다(S3 원본·메타데이터·벡터스토어 인덱스). 인계자만 가능. 성공: `204 No Content`.
-					- 삭제 가능 상태: `INDEXED` 또는 `FAILED`. 처리 중(`EXTRACTING`) 파일은 삭제 불가: `409`(code=`AI_SOURCE_DOCUMENT_PROCESSING`).
-					- 없는 파일: `404`(code=`AI_SOURCE_DOCUMENT_NOT_FOUND`)
+					첨부 파일을 삭제한다(S3 원본·메타데이터·벡터스토어 인덱스). 인계자만 가능. 성공: 204 No Content.
+					- 삭제 가능 상태: INDEXED 또는 FAILED. 처리 중(EXTRACTING) 파일은 삭제 불가: 409(code=AI_SOURCE_DOCUMENT_PROCESSING).
+					- 없는 파일: 404(code=AI_SOURCE_DOCUMENT_NOT_FOUND)
 					""")
 	@DeleteMapping("/files/{fileId}")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
@@ -174,8 +178,8 @@ public class RagController {
 
 	@Operation(summary = "파일 추출/임베딩 재처리",
 			description = """
-					텍스트 추출·인덱싱에 실패(`FAILED`)한 파일을 S3 원본으로 다시 처리한다. 인계자만 가능. 새 처리 상태를 반환한다.
-					- 실패 상태가 아닌 파일 재처리: `409`(code=`HANDOVER_INVALID_STATE`)
+					텍스트 추출·인덱싱에 실패(FAILED)한 파일을 S3 원본으로 다시 처리한다. 인계자만 가능. 새 처리 상태를 반환한다.
+					- 실패 상태가 아닌 파일 재처리: 409(code=HANDOVER_INVALID_STATE)
 					""")
 	@PostMapping("/files/{fileId}/retry")
 	public FileUploadResponse retryFile(
@@ -191,8 +195,8 @@ public class RagController {
 
 	@Operation(summary = "AI 답변 근거 원문 단건 조회",
 			description = """
-					AI 답변의 `citations[].sourceId`를 눌렀을 때 해당 원문 메타데이터(제목·파일 id·수정일 등)를 보여준다. 참여자 모두 가능.
-					- 없는 근거: `404`(code=`AI_SOURCE_DOCUMENT_NOT_FOUND`)
+					AI 답변의 citations[].sourceId를 눌렀을 때 해당 원문 메타데이터(제목·파일 id·수정일 등)를 보여준다. 참여자 모두 가능.
+					- 없는 근거: 404(code=AI_SOURCE_DOCUMENT_NOT_FOUND)
 					""")
 	@GetMapping("/sources/{sourceId}")
 	public SourceDetailResponse getSourceDetail(
@@ -223,88 +227,92 @@ public class RagController {
 	@Operation(summary = "인수인계 문서 기반 질의응답",
 			description = """
 					업로드된 문서 안에서 근거(citation)를 찾아 답변한다(RAG). 주로 인수자가 첫날 궁금증을 물을 때 쓴다. 참여자 모두 가능.
-					`answerSource`로 답변 출처를 구분한다:
-					- `DOCUMENT`: 문서에서 근거를 찾음 → `grounded=true`, `answer`, `citations[]` 포함
-					- `GENERAL_KNOWLEDGE`: 문서에 근거는 없지만 AI가 상황에 맞게 스스로 판단해서 답함
-					  → `grounded=false`, `answer` 있음, `citations=[]`, `fallbackContact=null`. 세 가지 경우가 여기 섞여 있다:
+					answerSource로 답변 출처를 구분한다:
+					- DOCUMENT: 문서에서 근거를 찾음 → grounded=true, answer, citations[] 포함
+					- GENERAL_KNOWLEDGE: 문서에 근거는 없지만 AI가 상황에 맞게 스스로 판단해서 답함
+					  → grounded=false, answer 있음, citations=[], fallbackContact=null. 세 가지 경우가 여기 섞여 있다:
 					    1) 일반적으로 알려진 용어/개념(예: "ROI가 뭐야?") → 그 뜻을 바로 설명
 					    2) 질문이 애매해서 특정이 안 됨 → AI가 되묻는 질문을 answer로 반환(예: "어떤 배송업체를 말씀하시는 건가요?")
 					    3) 회사만 아는 고유 정보라 되물어도 답할 수 없음 → "팀장님/인계자에게 직접 문의하라"는 안내를 answer로 반환
 					  프론트는 이 경우 "사내 자료 기준 답변이 아님"을 표시해주는 게 좋다. answer 자체가 이미 자연어 안내문이라
 					  별도 UI 분기 없이 그대로 보여줘도 된다.
-					- `NOT_FOUND`: 위 판단 자체가 기술적으로 실패했을 때만 쓰는 최후 수단(사실상 드묾)
-					  → `grounded=false`, `answer=null`, `fallbackContact`(문의 대상 안내) 포함.
+					- NOT_FOUND: 위 판단 자체가 기술적으로 실패했을 때만 쓰는 최후 수단(사실상 드묾)
+					  → grounded=false, answer=null, fallbackContact(문의 대상 안내) 포함.
 
-					요청 예시:
-					```json
-					{ "question": "배송업체가 회신을 안 하면 언제까지 기다려요?" }
-					```
-					응답 예시 — 문서에서 근거를 찾은 경우:
-					```json
-					{
-					  "messageId": "b2c3d4e5-...",
-					  "answer": "오늘 오후 3시까지 답이 없으면 물류팀에 공유하세요.",
-					  "grounded": true,
-					  "answerSource": "DOCUMENT",
-					  "citations": [
-					    { "sourceId": "a1b2c3d4-...", "title": "문제상황_대응방법.pdf", "locator": "청크 3/12", "fileId": "a1b2c3d4-...", "updatedAt": "2026-08-21T09:00:00Z" }
-					  ],
-					  "fallbackContact": null,
-					  "answeredAt": "2026-08-25T02:00:00Z"
-					}
-					```
-					`citations[].sourceId` == `fileId` == 업로드 파일(SourceDocument) id로 항상 같은 값이다.
-					원문 메타데이터는 `GET /sources/{sourceId}`, 원본 파일 다운로드는 `GET /files/{fileId}/download`로 잇는다.
-					`locator`는 문서 내 대략 위치(청크 순번). `title`은 파일명.
-					응답 예시 — 문서엔 없지만 일반적으로 알려진 용어라 일반 지식으로 답한 경우:
-					```json
-					{
-					  "messageId": "d4e5f6a7-...",
-					  "answer": "ROI는 투자 대비 수익률(Return On Investment)을 뜻해요.",
-					  "grounded": false,
-					  "answerSource": "GENERAL_KNOWLEDGE",
-					  "citations": [],
-					  "fallbackContact": null,
-					  "answeredAt": "2026-08-25T02:00:00Z"
-					}
-					```
-					응답 예시 — 질문이 애매해서 AI가 되물은 경우:
-					```json
-					{
-					  "messageId": "e5f6a7b8-...",
-					  "answer": "어떤 배송업체를 말씀하시는 건가요? 알려주시면 다시 찾아볼게요.",
-					  "grounded": false,
-					  "answerSource": "GENERAL_KNOWLEDGE",
-					  "citations": [],
-					  "fallbackContact": null,
-					  "answeredAt": "2026-08-25T02:00:00Z"
-					}
-					```
-					응답 예시 — 회사 고유 정보라 팀장님/인계자에게 문의하라고 안내한 경우:
-					```json
-					{
-					  "messageId": "f6a7b8c9-...",
-					  "answer": "이 부분은 자료에 없어서 제가 확인해드리기 어려워요. 팀장님이나 인계자분께 직접 여쭤보시는 게 좋을 것 같아요.",
-					  "grounded": false,
-					  "answerSource": "GENERAL_KNOWLEDGE",
-					  "citations": [],
-					  "fallbackContact": null,
-					  "answeredAt": "2026-08-25T02:00:00Z"
-					}
-					```
-					응답 예시 — 판단 호출 자체가 실패해 정말 아무 답도 못 만든 경우(드묾):
-					```json
-					{
-					  "messageId": "c3d4e5f6-...",
-					  "answer": null,
-					  "grounded": false,
-					  "answerSource": "NOT_FOUND",
-					  "citations": [],
-					  "fallbackContact": "업로드된 문서에서 답을 찾지 못했습니다. 인계자에게 직접 문의해주세요.",
-					  "answeredAt": "2026-08-25T02:00:00Z"
-					}
-					```
-					""")
+					citations[].sourceId == fileId == 업로드 파일(SourceDocument) id로 항상 같은 값이다.
+					원문 메타데이터는 GET /sources/{sourceId}, 원본 파일 다운로드는 GET /files/{fileId}/download로 잇는다.
+					locator는 문서 내 대략 위치(청크 순번). title은 파일명.
+					""",
+			requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(content = @Content(
+					mediaType = "application/json",
+					schema = @Schema(implementation = ChatQuestionRequest.class),
+					examples = {
+						@ExampleObject(name = "기본", value = """
+								{ "question": "배송업체가 회신을 안 하면 언제까지 기다려요?" }
+								""")
+					})),
+			responses = @ApiResponse(responseCode = "200", description = "성공", content = @Content(
+					mediaType = "application/json",
+					schema = @Schema(implementation = ChatAnswerResponse.class),
+					examples = {
+						@ExampleObject(name = "문서에서 근거를 찾은 경우", value = """
+								{
+								  "messageId": "b2c3d4e5-...",
+								  "answer": "오늘 오후 3시까지 답이 없으면 물류팀에 공유하세요.",
+								  "grounded": true,
+								  "answerSource": "DOCUMENT",
+								  "citations": [
+								    { "sourceId": "a1b2c3d4-...", "title": "문제상황_대응방법.pdf", "locator": "청크 3/12", "fileId": "a1b2c3d4-...", "updatedAt": "2026-08-21T09:00:00Z" }
+								  ],
+								  "fallbackContact": null,
+								  "answeredAt": "2026-08-25T02:00:00Z"
+								}
+								"""),
+						@ExampleObject(name = "문서엔 없지만 일반적으로 알려진 용어라 일반 지식으로 답한 경우", value = """
+								{
+								  "messageId": "d4e5f6a7-...",
+								  "answer": "ROI는 투자 대비 수익률(Return On Investment)을 뜻해요.",
+								  "grounded": false,
+								  "answerSource": "GENERAL_KNOWLEDGE",
+								  "citations": [],
+								  "fallbackContact": null,
+								  "answeredAt": "2026-08-25T02:00:00Z"
+								}
+								"""),
+						@ExampleObject(name = "질문이 애매해서 AI가 되물은 경우", value = """
+								{
+								  "messageId": "e5f6a7b8-...",
+								  "answer": "어떤 배송업체를 말씀하시는 건가요? 알려주시면 다시 찾아볼게요.",
+								  "grounded": false,
+								  "answerSource": "GENERAL_KNOWLEDGE",
+								  "citations": [],
+								  "fallbackContact": null,
+								  "answeredAt": "2026-08-25T02:00:00Z"
+								}
+								"""),
+						@ExampleObject(name = "회사 고유 정보라 팀장님/인계자에게 문의하라고 안내한 경우", value = """
+								{
+								  "messageId": "f6a7b8c9-...",
+								  "answer": "이 부분은 자료에 없어서 제가 확인해드리기 어려워요. 팀장님이나 인계자분께 직접 여쭤보시는 게 좋을 것 같아요.",
+								  "grounded": false,
+								  "answerSource": "GENERAL_KNOWLEDGE",
+								  "citations": [],
+								  "fallbackContact": null,
+								  "answeredAt": "2026-08-25T02:00:00Z"
+								}
+								"""),
+						@ExampleObject(name = "판단 호출 자체가 실패해 정말 아무 답도 못 만든 경우(드묾)", value = """
+								{
+								  "messageId": "c3d4e5f6-...",
+								  "answer": null,
+								  "grounded": false,
+								  "answerSource": "NOT_FOUND",
+								  "citations": [],
+								  "fallbackContact": "업로드된 문서에서 답을 찾지 못했습니다. 인계자에게 직접 문의해주세요.",
+								  "answeredAt": "2026-08-25T02:00:00Z"
+								}
+								""")
+					})))
 	@PostMapping("/chat/messages")
 	public ChatAnswerResponse ask(
 			@PathVariable UUID handoverId,
@@ -337,10 +345,10 @@ public class RagController {
 
 	@Operation(summary = "AI 분석·초안 생성 시작",
 			description = """
-					업로드된 문서를 분석해 구조화된 초안과 확인 질문을 만드는 **비동기 작업**을 시작한다(→ 상태 `ANALYZING`). 인계자만 가능.
-					즉시 `202 Accepted`로 작업 정보를 반환하고, 진행률은 `GET /analysis`로 폴링한다.
-					- 분석할 업로드 파일이 없음: `400`(code=`AI_NO_DOCUMENTS`)
-					- 이미 진행 중인 작업: `409`(code=`AI_ANALYSIS_ALREADY_RUNNING`)
+					업로드된 문서를 분석해 구조화된 초안과 확인 질문을 만드는 **비동기 작업**을 시작한다(→ 상태 ANALYZING). 인계자만 가능.
+					즉시 202 Accepted로 작업 정보를 반환하고, 진행률은 GET /analysis로 폴링한다.
+					- 분석할 업로드 파일이 없음: 400(code=AI_NO_DOCUMENTS)
+					- 이미 진행 중인 작업: 409(code=AI_ANALYSIS_ALREADY_RUNNING)
 					""")
 	@PostMapping("/analysis")
 	@ResponseStatus(HttpStatus.ACCEPTED)
@@ -355,12 +363,12 @@ public class RagController {
 			description = """
 					가장 최근 분석 작업의 상태·진행률·현재 단계를 조회한다. **권장 폴링 주기 2~3초.** 인계자만 가능.
 
-					응답 `AnalysisJobResponse`: `jobId`·`status`·`progress`(0~100 정수)·`currentStep`(사람이 읽는 현재 단계 문구)·`error`(실패 시 사유, 아니면 null)·`updatedAt`.
-					- 진행 중: `QUEUED`·`PARSING`·`INDEXING`·`GENERATING_QUESTIONS`·`GENERATING_DRAFT`
-					- **완료 상태**: `COMPLETED` — 폴링 종료. 확인 질문이 있으면 `GET /questions`가 채워지고(본 상태 `ANSWERING`),
-					  없으면 빈 배열(본 상태 `EDITING`)이니 바로 `GET /document`로 초안을 조회하면 된다.
-					- **실패 상태**: `FAILED` — `error`에 사유. `POST /analysis/retry`로만 재시도 가능(재시도 가능한 유일한 실패).
-					- 작업 없음: `404`(code=`AI_ANALYSIS_JOB_NOT_FOUND`)
+					응답 AnalysisJobResponse: jobId·status·progress(0~100 정수)·currentStep(사람이 읽는 현재 단계 문구)·error(실패 시 사유, 아니면 null)·updatedAt.
+					- 진행 중: QUEUED·PARSING·INDEXING·GENERATING_QUESTIONS·GENERATING_DRAFT
+					- **완료 상태**: COMPLETED — 폴링 종료. 확인 질문이 있으면 GET /questions가 채워지고(본 상태 ANSWERING),
+					  없으면 빈 배열(본 상태 EDITING)이니 바로 GET /document로 초안을 조회하면 된다.
+					- **실패 상태**: FAILED — error에 사유. POST /analysis/retry로만 재시도 가능(재시도 가능한 유일한 실패).
+					- 작업 없음: 404(code=AI_ANALYSIS_JOB_NOT_FOUND)
 					""")
 	@GetMapping("/analysis")
 	public AnalysisJobResponse getAnalysis(@PathVariable UUID handoverId, Authentication authentication) {
@@ -371,8 +379,8 @@ public class RagController {
 
 	@Operation(summary = "AI 분석 작업 재시도",
 			description = """
-					가장 최근 작업이 실패(`FAILED`)한 경우에만 새 분석 작업을 만든다. 인계자만 가능.
-					- 실패 상태가 아닐 때 재시도: `409`(code=`AI_ANALYSIS_RETRY_NOT_ALLOWED`)
+					가장 최근 작업이 실패(FAILED)한 경우에만 새 분석 작업을 만든다. 인계자만 가능.
+					- 실패 상태가 아닐 때 재시도: 409(code=AI_ANALYSIS_RETRY_NOT_ALLOWED)
 					""")
 	@PostMapping("/analysis/retry")
 	@ResponseStatus(HttpStatus.ACCEPTED)
@@ -385,7 +393,7 @@ public class RagController {
 	@Operation(summary = "인수인계 문서(초안) 조회",
 			description = """
 					AI가 생성했거나 사람이 수정한 구조화된 문서(섹션·업무·기준·관계자·일정·체크리스트 등)를 반환한다. 참여자 모두 가능.
-					- 아직 생성된 초안 없음: `404`(code=`AI_DRAFT_NOT_FOUND`)
+					- 아직 생성된 초안 없음: 404(code=AI_DRAFT_NOT_FOUND)
 					""")
 	@GetMapping("/document")
 	public HandoverDraftResponse getDraft(@PathVariable UUID handoverId, Authentication authentication) {
@@ -397,33 +405,39 @@ public class RagController {
 
 	@Operation(summary = "인수인계 문서(초안) 수정",
 			description = """
-					사람이 직접 고친 문서 내용을 저장한다(자동저장). 인계자만 가능. 현재는 `content` 전체를 통째로 교체한다.
-					(주의: 아직 낙관적 버전 잠금이 없어 여러 창에서 동시에 저장하면 마지막 저장이 이긴다.)
-					- 인계자가 아니면: `403`(code=`HANDOVER_FORBIDDEN`)
-
-					요청 예시:
-					```json
-					{
-					  "content": {
-					    "purpose": "가을 정기 할인전을 기획·운영해 분기 매출 목표를 달성한다.",
-					    "completionCriteria": "후임자가 쿠폰 발행부터 정산까지 단독으로 진행할 수 있다.",
-					    "ongoingTasks": [
-					      { "title": "가을 할인전 쿠폰 세팅", "status": "진행 중", "description": "10% 쿠폰을 운영 어드민에 등록 중.", "nextAction": "마케팅 확인 후 팀장 승인", "schedule": "9/30까지" }
-					    ],
-					    "recurringTasks": [
-					      { "title": "주간 주문 현황 공유", "status": "매주 반복", "description": "반품·문의 포함 집계", "nextAction": "월요일 오전 집계", "schedule": "매주 월요일" }
-					    ],
-					    "rulesAndExceptions": ["쿠폰 승인은 마케팅 확인 후 팀장 승인", "배송업체 미회신 시 오후 3시까지 대기 후 물류팀 공유"],
-					    "stakeholders": [ { "name": "김미영", "team": "마케팅팀", "helpWith": "쿠폰 정책 확인" } ],
-					    "tools": [ { "name": "주간 주문 현황 양식.xlsx", "description": "매주 주문·반품 기록" } ],
-					    "schedule": [ { "cycle": "매주 월요일", "task": "주문 현황 집계", "detail": "반품·문의 포함 공유" } ],
-					    "accessAccounts": [ { "tool": "운영 어드민", "permission": "주문 조회·행사 설정", "status": "사용 가능" } ],
-					    "firstWeekChecklist": ["운영 어드민 계정 발급 확인", "쿠폰 승인 라인 파악"],
-					    "confirmedCriteria": [ { "label": "쿠폰 승인", "value": "마케팅 확인 후 팀장 승인" } ]
-					  }
-					}
-					```
-					""")
+					사람이 직접 고친 문서 내용을 저장한다(자동저장). 인계자만 가능. 현재는 content 전체를 통째로 교체한다.
+					- baseRevision(선택): 조회 응답의 revision을 그대로 보내면, 그사이 다른 창·준비도 보완 적용으로 문서가 바뀌었을 때
+					  저장을 거절한다 → 409(code=AI_DRAFT_REVISION_CONFLICT). 생략하면 기존처럼 마지막 저장이 이긴다.
+					- 응답의 revision은 저장 후 새 버전이다.
+					- 인계자가 아니면: 403(code=HANDOVER_FORBIDDEN)
+					""",
+			requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(content = @Content(
+					mediaType = "application/json",
+					schema = @Schema(implementation = UpdateDraftRequest.class),
+					examples = {
+						@ExampleObject(name = "기본", value = """
+								{
+								  "content": {
+								    "purpose": "가을 정기 할인전을 기획·운영해 분기 매출 목표를 달성한다.",
+								    "completionCriteria": "후임자가 쿠폰 발행부터 정산까지 단독으로 진행할 수 있다.",
+								    "ongoingTasks": [
+								      { "title": "가을 할인전 쿠폰 세팅", "status": "진행 중", "description": "10% 쿠폰을 운영 어드민에 등록 중.", "nextAction": "마케팅 확인 후 팀장 승인", "schedule": "9/30까지" }
+								    ],
+								    "recurringTasks": [
+								      { "title": "주간 주문 현황 공유", "status": "매주 반복", "description": "반품·문의 포함 집계", "nextAction": "월요일 오전 집계", "schedule": "매주 월요일" }
+								    ],
+								    "rulesAndExceptions": ["쿠폰 승인은 마케팅 확인 후 팀장 승인", "배송업체 미회신 시 오후 3시까지 대기 후 물류팀 공유"],
+								    "stakeholders": [ { "name": "김미영", "team": "마케팅팀", "helpWith": "쿠폰 정책 확인" } ],
+								    "tools": [ { "name": "주간 주문 현황 양식.xlsx", "description": "매주 주문·반품 기록" } ],
+								    "schedule": [ { "cycle": "매주 월요일", "task": "주문 현황 집계", "detail": "반품·문의 포함 공유" } ],
+								    "accessAccounts": [ { "tool": "운영 어드민", "permission": "주문 조회·행사 설정", "status": "사용 가능" } ],
+								    "firstWeekChecklist": ["운영 어드민 계정 발급 확인", "쿠폰 승인 라인 파악"],
+								    "confirmedCriteria": [ { "label": "쿠폰 승인", "value": "마케팅 확인 후 팀장 승인" } ]
+								  },
+								  "baseRevision": 3
+								}
+								""")
+					})))
 	@PatchMapping("/document")
 	public HandoverDraftResponse updateDraft(
 			@PathVariable UUID handoverId,
@@ -432,7 +446,7 @@ public class RagController {
 		Handover handover = loadHandover(handoverId);
 		handoverPermission.requireOwner(handover, currentUserId(authentication));
 
-		return ragAnalysisService.updateDraft(handoverId, request.content());
+		return ragAnalysisService.updateDraft(handoverId, request.content(), request.baseRevision());
 	}
 
 	@Operation(summary = "인수자 첫날 요약(브리핑)",
@@ -449,7 +463,7 @@ public class RagController {
 	}
 
 	@Operation(summary = "인수인계 문서 Markdown 내보내기",
-			description = "서버에 저장된 문서를 `.md` 파일로 내려준다(`text/markdown`, `Content-Disposition: attachment`). 참여자 모두 가능.")
+			description = "서버에 저장된 문서를 .md 파일로 내려준다(text/markdown, Content-Disposition: attachment). 참여자 모두 가능.")
 	@GetMapping("/document/export")
 	public ResponseEntity<byte[]> exportDraft(@PathVariable UUID handoverId, Authentication authentication) {
 		Handover handover = loadHandover(handoverId);
@@ -469,9 +483,9 @@ public class RagController {
 	@Operation(summary = "AI 확인 질문 목록 조회",
 			description = """
 					AI가 초안 보완을 위해 만든 확인 질문(질문·설명·선택지·근거)을 반환한다. 인계자만 가능.
-					`type=INTERVIEW`(추가 정보 인터뷰) 또는 `type=CONFLICT`(문서 간 충돌 해소)로 필터할 수 있다.
-					각 항목의 `status`: `PENDING`(미응답)·`ANSWERED`(답변)·`SKIPPED`(건너뜀).
-					**질문이 0개면 빈 배열**을 반환한다 — 이땐 답변 단계를 건너뛰고 바로 `GET /document`로 초안을 조회하면 된다.
+					type=INTERVIEW(추가 정보 인터뷰) 또는 type=CONFLICT(문서 간 충돌 해소)로 필터할 수 있다.
+					각 항목의 status: PENDING(미응답)·ANSWERED(답변)·SKIPPED(건너뜀).
+					**질문이 0개면 빈 배열**을 반환한다 — 이땐 답변 단계를 건너뛰고 바로 GET /document로 초안을 조회하면 된다.
 					""")
 	@GetMapping("/questions")
 	public List<ClarificationQuestionResponse> getQuestions(
@@ -487,23 +501,25 @@ public class RagController {
 
 	@Operation(summary = "AI 확인 질문에 답변",
 			description = """
-					선택지 선택 또는 직접 입력으로 답변을 저장/수정하거나 건너뛴다. 인계자만 가능. 답변하면 `status=ANSWERED`, 건너뛰면 `SKIPPED`.
+					선택지 선택 또는 직접 입력으로 답변을 저장/수정하거나 건너뛴다. 인계자만 가능. 답변하면 status=ANSWERED, 건너뛰면 SKIPPED.
 
-					요청 규칙(`validCombination` 검증):
-					- **답변**: `skipped=false` + `answer`에 내용(공백만은 불가).
-					- **건너뛰기**: `skipped=true`만 보내면 된다. `answer`는 보내지 않거나 `null`. **빈 문자열("")도 보내지 말 것** — 건너뛸 때 `answer`가 있으면 검증 실패.
-					- 규칙 위반(둘 다 없음/둘 다 있음): `400`(code=`AI_QUESTION_ANSWER_INVALID` 또는 검증 `VALIDATION_FAILED`).
-					- 없는 질문: `404`(code=`AI_QUESTION_NOT_FOUND`)
-
-					요청 예시 — 답변:
-					```json
-					{ "answer": "마케팅 확인 후 팀장 승인", "skipped": false }
-					```
-					요청 예시 — 건너뛰기:
-					```json
-					{ "answer": null, "skipped": true }
-					```
-					""")
+					요청 규칙(validCombination 검증):
+					- **답변**: skipped=false + answer에 내용(공백만은 불가).
+					- **건너뛰기**: skipped=true만 보내면 된다. answer는 보내지 않거나 null. **빈 문자열("")도 보내지 말 것** — 건너뛸 때 answer가 있으면 검증 실패.
+					- 규칙 위반(둘 다 없음/둘 다 있음): 400(code=AI_QUESTION_ANSWER_INVALID 또는 검증 VALIDATION_FAILED).
+					- 없는 질문: 404(code=AI_QUESTION_NOT_FOUND)
+					""",
+			requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(content = @Content(
+					mediaType = "application/json",
+					schema = @Schema(implementation = QuestionAnswerRequest.class),
+					examples = {
+						@ExampleObject(name = "답변", value = """
+								{ "answer": "마케팅 확인 후 팀장 승인", "skipped": false }
+								"""),
+						@ExampleObject(name = "건너뛰기", value = """
+								{ "answer": null, "skipped": true }
+								""")
+					})))
 	@PutMapping("/questions/{questionId}/answer")
 	public ClarificationQuestionResponse answerQuestion(
 			@PathVariable UUID handoverId,
@@ -518,11 +534,11 @@ public class RagController {
 
 	@Operation(summary = "확인 질문 완료 처리",
 			description = """
-					답변(및 건너뛴 항목)을 반영해 초안을 다시 생성하고 최신 문서를 반환한다(본 상태 → `EDITING`). 인계자만 가능.
+					답변(및 건너뛴 항목)을 반영해 초안을 다시 생성하고 최신 문서를 반환한다(본 상태 → EDITING). 인계자만 가능.
 
-					**모든 질문에 답할 필요는 없다** — 답하지 않을 질문은 건너뛰기(`SKIPPED`)만 해두면 된다. 즉 `PENDING`이 하나도 없으면 호출 가능.
+					**모든 질문에 답할 필요는 없다** — 답하지 않을 질문은 건너뛰기(SKIPPED)만 해두면 된다. 즉 PENDING이 하나도 없으면 호출 가능.
 					답변이 하나도 없고 전부 건너뛰었거나 **질문이 0개면** 초안 재생성 없이 그대로 완료 처리한다.
-					- 아직 `PENDING`(답변·건너뛰기 안 한) 질문이 남아 있음: `409`(code=`AI_QUESTIONS_INCOMPLETE`)
+					- 아직 PENDING(답변·건너뛰기 안 한) 질문이 남아 있음: 409(code=AI_QUESTIONS_INCOMPLETE)
 					""")
 	@PostMapping("/questions/complete")
 	public HandoverDraftResponse completeQuestions(@PathVariable UUID handoverId, Authentication authentication) {
@@ -533,7 +549,7 @@ public class RagController {
 	}
 
 	@Operation(summary = "AI 원문 근거 목록",
-			description = "AI 분석·답변에 참조되는 원문(문서 제목·위치·수정일·접근 경로) 목록을 반환한다. 단건 상세는 `GET /sources/{sourceId}`. 참여자 모두 가능.")
+			description = "AI 분석·답변에 참조되는 원문(문서 제목·위치·수정일·접근 경로) 목록을 반환한다. 단건 상세는 GET /sources/{sourceId}. 참여자 모두 가능.")
 	@GetMapping("/sources")
 	public List<SourceEvidenceResponse> getSources(@PathVariable UUID handoverId, Authentication authentication) {
 		Handover handover = loadHandover(handoverId);

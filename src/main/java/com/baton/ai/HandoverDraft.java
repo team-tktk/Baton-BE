@@ -25,6 +25,9 @@ import lombok.NoArgsConstructor;
 /**
  * AI가 업로드 문서로부터 생성한 인수인계 초안. handover 하나당 하나만 존재하며,
  * 분석을 다시 돌리거나 보완 질문 답변을 반영할 때마다 content를 통째로 덮어쓴다.
+ *
+ * revision은 content가 바뀔 때마다 1씩 오른다. 사용자가 본 버전과 현재 버전이 다르면
+ * 준비도 보완안 적용·수동 저장을 막아 다른 사람의 수정을 덮어쓰지 않게 한다.
  */
 @Entity
 @Table(name = "handover_drafts")
@@ -42,6 +45,9 @@ public class HandoverDraft {
 	@JdbcTypeCode(SqlTypes.JSON)
 	@Column(nullable = false)
 	private HandoverDraftContent content;
+
+	@Column(nullable = false, columnDefinition = "bigint not null default 0")
+	private long revision;
 
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private Instant createdAt;
@@ -69,6 +75,7 @@ public class HandoverDraft {
 
 	public void replaceContent(HandoverDraftContent content) {
 		this.content = content;
+		this.revision++;
 		this.briefingSummary = null;
 		this.suggestedQuestions = null;
 	}
