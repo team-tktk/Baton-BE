@@ -8,6 +8,7 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.baton.ai.RagIngestService;
 import com.baton.ai.SourceDocument;
 import com.baton.ai.SourceDocumentRepository;
 import com.baton.ai.SourceDocumentStatus;
@@ -30,6 +31,8 @@ public class MaskingService {
 
 	private final SourceDocumentRepository sourceDocumentRepository;
 	private final MaskingCandidateRepository maskingCandidateRepository;
+	private final MaskingConfirmation maskingConfirmation;
+	private final RagIngestService ragIngestService;
 
 	@Transactional(readOnly = true)
 	public MaskingReviewResponse getReview(UUID handoverId, UUID fileId) {
@@ -77,6 +80,16 @@ public class MaskingService {
 			throw new BusinessException(ErrorCode.MASKING_CANDIDATE_NOT_DELETABLE);
 		}
 		maskingCandidateRepository.delete(candidate);
+	}
+
+	/**
+	 * 검수 확정. ① 마스킹 텍스트로 교체·원문 삭제(트랜잭션) → ② 마스킹된 텍스트만 임베딩(트랜잭션 밖).
+	 * ②가 실패하면 파일은 FAILED가 되고, 재처리하면 원문 추출 없이 임베딩만 다시 한다.
+	 * 트랜잭션을 걸지 않는다 — 오래 걸리는 임베딩 동안 DB 잠금을 잡고 있지 않기 위함.
+	 */
+	public void confirm(UUID handoverId, UUID fileId) {
+		maskingConfirmation.apply(handoverId, fileId);
+		ragIngestService.indexConfirmed(handoverId, fileId);
 	}
 
 	/** 파일 목록용 — 파일별 남은 확인 개수. 남은 게 없는 파일은 결과에 없다. */

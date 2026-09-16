@@ -7,6 +7,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.baton.common.BusinessException;
+import com.baton.common.ErrorCode;
 import com.baton.masking.MaskingCandidate;
 import com.baton.masking.MaskingCandidateRepository;
 
@@ -27,17 +29,40 @@ public class SourceDocumentPersistence {
 
 	private final SourceDocumentRepository sourceDocumentRepository;
 	private final MaskingCandidateRepository maskingCandidateRepository;
+	private final LargeObjectCleaner largeObjectCleaner;
 
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public SourceDocument createInitial(UUID handoverId, String fileName, String mimeType, long fileSize, String s3Key) {
 		return sourceDocumentRepository.save(SourceDocument.create(handoverId, fileName, mimeType, fileSize, s3Key));
 	}
 
+	/** 텍스트를 바꾸는 메서드는 이전 원문 Large Object를 지운다(LargeObjectCleaner 참고). */
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public void markIndexed(UUID sourceDocumentId, String extractedText, List<String> chunkIds) {
 		sourceDocumentRepository.findById(sourceDocumentId)
 				.ifPresent(doc -> {
+					Long previousOid = largeObjectCleaner.extractedTextOid(sourceDocumentId);
 					doc.markIndexed(extractedText, chunkIds);
+					sourceDocumentRepository.saveAndFlush(doc);
+					largeObjectCleaner.unlinkIfReplaced(sourceDocumentId, previousOid);
+				});
+	}
+
+	/** 확정된 파일의 임베딩 완료. 이미 마스킹된 텍스트는 건드리지 않는다. */
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public void markIndexed(UUID sourceDocumentId, List<String> chunkIds) {
+		sourceDocumentRepository.findById(sourceDocumentId)
+				.ifPresent(doc -> {
+					doc.markIndexed(chunkIds);
+					sourceDocumentRepository.save(doc);
+				});
+	}
+
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public void markIndexing(UUID sourceDocumentId) {
+		sourceDocumentRepository.findById(sourceDocumentId)
+				.ifPresent(doc -> {
+					doc.markIndexing();
 					sourceDocumentRepository.save(doc);
 				});
 	}
@@ -50,11 +75,27 @@ public class SourceDocumentPersistence {
 	public void markMaskingReview(UUID sourceDocumentId, String extractedText, List<MaskingCandidate> candidates) {
 		sourceDocumentRepository.findById(sourceDocumentId)
 				.ifPresent(doc -> {
+					Long previousOid = largeObjectCleaner.extractedTextOid(sourceDocumentId);
 					maskingCandidateRepository.deleteAllBySourceDocumentId(sourceDocumentId);
 					maskingCandidateRepository.saveAll(candidates);
 					doc.markMaskingReview(extractedText);
-					sourceDocumentRepository.save(doc);
+					sourceDocumentRepository.saveAndFlush(doc);
+					largeObjectCleaner.unlinkIfReplaced(sourceDocumentId, previousOid);
 				});
+	}
+
+	/**
+	 * Large Object는 트랜잭션 안에서만 읽을 수 있어서, 임베딩에 필요한 값만 트랜잭션 안에서 꺼낸다.
+	 * (임베딩은 오래 걸리므로 트랜잭션 밖에서 한다.)
+	 */
+	@Transactional(readOnly = true)
+	public IndexingSource readForIndexing(UUID sourceDocumentId) {
+		return sourceDocumentRepository.findById(sourceDocumentId)
+				.map(doc -> new IndexingSource(doc.getFileName(), doc.getExtractedText()))
+				.orElseThrow(() -> new BusinessException(ErrorCode.AI_SOURCE_DOCUMENT_NOT_FOUND));
+	}
+
+	public record IndexingSource(String fileName, String text) {
 	}
 
 	@Transactional(propagation = Propagation.REQUIRES_NEW)

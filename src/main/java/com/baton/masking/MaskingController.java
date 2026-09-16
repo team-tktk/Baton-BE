@@ -33,7 +33,7 @@ import lombok.RequiredArgsConstructor;
 				+ "적용/해제하거나 직접 추가한다. 원문이 나오므로 인계자 전용(권한 없음 403 HANDOVER_FORBIDDEN). "
 				+ "파일 상태가 MASKING_REVIEW일 때만 수정할 수 있다(아니면 409 MASKING_NOT_IN_REVIEW). "
 				+ "권장 흐름: GET /files(remainingReviewCount 확인) → 파일별 GET /masking → PATCH·POST·DELETE /masking/candidates → "
-				+ "(다음 단계에서 제공) 검수 확정.")
+				+ "POST /masking/confirm(검수 확정) → 모든 파일 확정 후 POST /analysis.")
 @RestController
 @RequestMapping("/api/v1/handovers/{handoverId}/files/{fileId}/masking")
 @RequiredArgsConstructor
@@ -155,6 +155,36 @@ public class MaskingController {
 			Authentication authentication) {
 		maskingAccess.requireOwner(handoverId, authentication);
 		return maskingService.addManual(handoverId, fileId, request);
+	}
+
+	@Operation(summary = "마스킹 검수 확정",
+			description = """
+					확인이 끝난 파일의 검수를 확정한다. 인계자만 가능. 확정 후의 검수 화면 데이터(MaskingReviewResponse)를 반환한다.
+
+					**처리 순서**
+					1. 적용(applied=true)된 구간을 [유형#번호] 토큰으로 바꾼 텍스트를 만든다.
+					   같은 파일에서 같은 값은 같은 번호(예: 두 곳의 같은 이메일 → 둘 다 [이메일#1]). 직접 추가한 구간은 [비공개#번호].
+					2. 원문을 이 텍스트로 교체하고 원문은 DB에서 삭제한다. 확정 시각을 기록한다(status=INDEXING).
+					3. 마스킹된 텍스트만 임베딩한다 → status=INDEXED. 이후 분석·초안·질의응답은 마스킹된 텍스트만 사용한다.
+
+					확정 후에는 되돌릴 수 없다(원문이 삭제됨). 응답의 text는 null, confirmed는 true.
+					모든 파일이 확정되어야 AI 분석을 시작할 수 있다(POST /analysis → 409 MASKING_NOT_CONFIRMED).
+
+					**에러**
+					- 409 MASKING_REVIEW_INCOMPLETE: 확인하지 않은 항목(pendingReview)이 남음. detail에 남은 개수
+					- 409 MASKING_NOT_IN_REVIEW: 검수 대기 상태가 아님(이미 확정했거나 처리 중)
+					- 422 AI_FILE_PARSE_FAILED: 3번 임베딩 실패. 1·2번은 이미 반영되어 status=FAILED가 되며,
+					  POST /files/{fileId}/retry로 재처리하면 원문 추출 없이 임베딩만 다시 한다.
+					- 404 AI_SOURCE_DOCUMENT_NOT_FOUND: 없는 파일(또는 다른 인수인계의 파일)
+					""")
+	@PostMapping("/confirm")
+	public MaskingReviewResponse confirm(
+			@PathVariable UUID handoverId,
+			@PathVariable UUID fileId,
+			Authentication authentication) {
+		maskingAccess.requireOwner(handoverId, authentication);
+		maskingService.confirm(handoverId, fileId);
+		return maskingService.getReview(handoverId, fileId);
 	}
 
 	@Operation(summary = "직접 추가한 마스킹 구간 삭제",

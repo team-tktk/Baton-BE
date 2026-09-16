@@ -41,6 +41,9 @@ jobs:
           --tests 'com.baton.masking.MaskingDetectorTest'
           --tests 'com.baton.masking.MaskingCandidateTest'
           --tests 'com.baton.masking.MaskingServiceTest'
+          --tests 'com.baton.masking.MaskingApplierTest'
+          --tests 'com.baton.masking.MaskingConfirmationTest'
+          --tests 'com.baton.ai.RagIngestServiceConfirmTest'
           --tests 'com.baton.ai.RagIngestServiceMaskingTest'
           --tests 'com.baton.ai.RagIngestServiceQuotaTest'
           --no-daemon

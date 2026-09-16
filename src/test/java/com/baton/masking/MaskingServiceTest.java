@@ -3,6 +3,8 @@ package com.baton.masking;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -16,10 +18,12 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import com.baton.ai.RagIngestService;
 import com.baton.ai.SourceDocument;
 import com.baton.ai.SourceDocumentRepository;
 import com.baton.ai.SourceDocumentStatus;
@@ -42,6 +46,10 @@ class MaskingServiceTest {
 	private SourceDocumentRepository sourceDocumentRepository;
 	@Mock
 	private MaskingCandidateRepository maskingCandidateRepository;
+	@Mock
+	private MaskingConfirmation maskingConfirmation;
+	@Mock
+	private RagIngestService ragIngestService;
 
 	private MaskingService service;
 	private UUID handoverId;
@@ -52,7 +60,7 @@ class MaskingServiceTest {
 
 	@BeforeEach
 	void setUp() {
-		service = new MaskingService(sourceDocumentRepository, maskingCandidateRepository);
+		service = new MaskingService(sourceDocumentRepository, maskingCandidateRepository, maskingConfirmation, ragIngestService);
 		handoverId = UUID.randomUUID();
 
 		document = SourceDocument.create(handoverId, "contract.docx", "application/zip", 100, "s3-key");
@@ -175,6 +183,24 @@ class MaskingServiceTest {
 		service.deleteManual(handoverId, fileId, name.getId());
 
 		verify(maskingCandidateRepository).delete(name);
+	}
+
+	@Test
+	void confirmAppliesMaskingBeforeIndexing() {
+		service.confirm(handoverId, fileId);
+
+		InOrder order = inOrder(maskingConfirmation, ragIngestService);
+		order.verify(maskingConfirmation).apply(handoverId, fileId);
+		order.verify(ragIngestService).indexConfirmed(handoverId, fileId);
+	}
+
+	@Test
+	void confirmDoesNotIndexWhenConfirmationFails() {
+		doThrow(new BusinessException(ErrorCode.MASKING_REVIEW_INCOMPLETE))
+				.when(maskingConfirmation).apply(handoverId, fileId);
+
+		assertError(() -> service.confirm(handoverId, fileId), ErrorCode.MASKING_REVIEW_INCOMPLETE);
+		verify(ragIngestService, never()).indexConfirmed(any(), any());
 	}
 
 	@Test

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -32,6 +33,8 @@ class AnalysisJobServiceTest {
 	@Mock
 	private HandoverRepository handoverRepository;
 	@Mock
+	private SourceDocumentRepository sourceDocumentRepository;
+	@Mock
 	private ApplicationEventPublisher eventPublisher;
 
 	private AnalysisJobService service;
@@ -40,7 +43,7 @@ class AnalysisJobServiceTest {
 
 	@BeforeEach
 	void setUp() {
-		service = new AnalysisJobService(analysisJobRepository, handoverRepository, eventPublisher);
+		service = new AnalysisJobService(analysisJobRepository, handoverRepository, sourceDocumentRepository, eventPublisher);
 		handoverId = UUID.randomUUID();
 		handover = Handover.create(UUID.randomUUID(), "운영 업무 인수인계");
 		when(handoverRepository.findByIdForUpdate(handoverId)).thenReturn(Optional.of(handover));
@@ -66,6 +69,20 @@ class AnalysisJobServiceTest {
 				.isInstanceOfSatisfying(BusinessException.class,
 						exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.AI_ANALYSIS_ALREADY_RUNNING));
 
+		verify(analysisJobRepository, never()).save(any());
+		verify(eventPublisher, never()).publishEvent(any());
+	}
+
+	@Test
+	void rejectsWhenMaskingReviewIsNotConfirmed() {
+		when(analysisJobRepository.existsByHandoverIdAndStatusIn(any(), anyCollection())).thenReturn(false);
+		when(sourceDocumentRepository.existsByHandoverIdAndStatusIn(eq(handoverId), anyCollection())).thenReturn(true);
+
+		assertThatThrownBy(() -> service.start(handoverId, false))
+				.isInstanceOfSatisfying(BusinessException.class,
+						exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.MASKING_NOT_CONFIRMED));
+
+		assertThat(handover.getStatus()).isEqualTo(HandoverStatus.DRAFT);
 		verify(analysisJobRepository, never()).save(any());
 		verify(eventPublisher, never()).publishEvent(any());
 	}

@@ -23,8 +23,13 @@ public class AnalysisJobService {
 
 	private static final EnumSet<AnalysisJobStatus> ACTIVE_STATUSES = AnalysisJobStatus.active();
 
+	/** 마스킹 검수를 확정하지 않은(원문이 남아 있거나 임베딩 중인) 파일 상태. 하나라도 있으면 분석하지 않는다. */
+	private static final EnumSet<SourceDocumentStatus> UNCONFIRMED_FILE_STATUSES =
+			EnumSet.of(SourceDocumentStatus.MASKING_REVIEW, SourceDocumentStatus.INDEXING);
+
 	private final AnalysisJobRepository analysisJobRepository;
 	private final HandoverRepository handoverRepository;
+	private final SourceDocumentRepository sourceDocumentRepository;
 	private final ApplicationEventPublisher eventPublisher;
 
 	@Transactional
@@ -45,6 +50,10 @@ public class AnalysisJobService {
 
 		if (!handover.canStartAnalysis()) {
 			throw new BusinessException(ErrorCode.HANDOVER_INVALID_STATE, "현재 상태에서는 분석을 시작할 수 없습니다: " + handover.getStatus());
+		}
+
+		if (sourceDocumentRepository.existsByHandoverIdAndStatusIn(handoverId, UNCONFIRMED_FILE_STATUSES)) {
+			throw new BusinessException(ErrorCode.MASKING_NOT_CONFIRMED);
 		}
 
 		handover.markAnalysisStarted();

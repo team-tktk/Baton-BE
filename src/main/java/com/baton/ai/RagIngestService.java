@@ -72,6 +72,7 @@ public class RagIngestService {
 	private final HandoverRepository handoverRepository;
 	private final MaskingDetector maskingDetector;
 	private final MaskingCandidateRepository maskingCandidateRepository;
+	private final LargeObjectCleaner largeObjectCleaner;
 
 	@Value("${app.masking.enabled}")
 	private boolean maskingEnabled;
@@ -125,9 +126,32 @@ public class RagIngestService {
 			throw new BusinessException(ErrorCode.BAD_REQUEST, "실패한 파일만 재처리할 수 있습니다.");
 		}
 
+		// 검수를 확정한 파일은 이미 마스킹된 텍스트가 있으므로 원문을 다시 추출하지 않고 임베딩만 다시 한다.
+		if (sourceDocument.isMaskingConfirmed()) {
+			sourceDocumentPersistence.markIndexing(fileId);
+			indexConfirmed(handoverId, fileId);
+			return refreshed(sourceDocument);
+		}
+
 		byte[] fileBytes = s3FileStorage.download(sourceDocument.getS3Key());
 		runPipeline(handoverId, sourceDocument, fileBytes);
 		return refreshed(sourceDocument);
+	}
+
+	/**
+	 * 마스킹 검수를 확정한 파일(INDEXING)의 마스킹된 텍스트를 임베딩한다. 원문이 외부로 나가는 첫 지점이 아니라,
+	 * 이미 [유형#번호]로 치환된 텍스트만 보낸다. 실패하면 FAILED로 두고 재처리(retry)로 다시 시도할 수 있다.
+	 */
+	public void indexConfirmed(UUID handoverId, UUID fileId) {
+		SourceDocumentPersistence.IndexingSource source = sourceDocumentPersistence.readForIndexing(fileId);
+		try {
+			List<String> chunkIds = embed(handoverId, fileId, source.fileName(), List.of(new Document(source.text())));
+			sourceDocumentPersistence.markIndexed(fileId, chunkIds);
+		} catch (Exception e) {
+			log.error("[*] Masked text indexing failed for sourceDocumentId={}", fileId, e);
+			sourceDocumentPersistence.markFailed(fileId);
+			throw new BusinessException(ErrorCode.AI_FILE_PARSE_FAILED, "마스킹된 텍스트를 인덱싱하지 못했습니다. 재처리해주세요.");
+		}
 	}
 
 	/**
@@ -237,11 +261,8 @@ public class RagIngestService {
 				return;
 			}
 
-			List<Document> chunks = tokenTextSplitter.apply(rawDocuments);
-			attachMetadata(chunks, handoverId, sourceDocument);
-
-			vectorStore.add(chunks);
-			List<String> chunkIds = chunks.stream().map(Document::getId).toList();
+			List<String> chunkIds = embed(
+					handoverId, sourceDocument.getId(), sourceDocument.getFileName(), rawDocuments);
 			sourceDocumentPersistence.markIndexed(sourceDocument.getId(), extractedText, chunkIds);
 		} catch (BusinessException e) {
 			sourceDocumentPersistence.markFailed(sourceDocument.getId());
@@ -280,12 +301,20 @@ public class RagIngestService {
 		return rawDocuments;
 	}
 
-	private void attachMetadata(List<Document> chunks, UUID handoverId, SourceDocument sourceDocument) {
+	/** 청크로 나눠 메타데이터를 붙이고 벡터스토어에 저장한다(= OpenAI 임베딩 호출). 저장된 청크 ID를 돌려준다. */
+	private List<String> embed(UUID handoverId, UUID sourceDocumentId, String fileName, List<Document> documents) {
+		List<Document> chunks = tokenTextSplitter.apply(documents);
+		attachMetadata(chunks, handoverId, sourceDocumentId, fileName);
+		vectorStore.add(chunks);
+		return chunks.stream().map(Document::getId).toList();
+	}
+
+	private void attachMetadata(List<Document> chunks, UUID handoverId, UUID sourceDocumentId, String fileName) {
 		for (int i = 0; i < chunks.size(); i++) {
 			Document chunk = chunks.get(i);
 			chunk.getMetadata().put(META_HANDOVER_ID, handoverId.toString());
-			chunk.getMetadata().put(META_SOURCE_DOCUMENT_ID, sourceDocument.getId().toString());
-			chunk.getMetadata().put(META_FILE_NAME, sourceDocument.getFileName());
+			chunk.getMetadata().put(META_SOURCE_DOCUMENT_ID, sourceDocumentId.toString());
+			chunk.getMetadata().put(META_FILE_NAME, fileName);
 			chunk.getMetadata().put(META_CHUNK_INDEX, i);
 		}
 	}
@@ -321,7 +350,12 @@ public class RagIngestService {
 		}
 		maskingCandidateRepository.deleteAllBySourceDocumentId(fileId);
 		s3FileStorage.delete(sourceDocument.getS3Key());
+
+		// 행을 지워도 원문 Large Object는 남으므로 직접 지운다(LargeObjectCleaner 참고).
+		Long textOid = largeObjectCleaner.extractedTextOid(fileId);
 		sourceDocumentRepository.delete(sourceDocument);
+		sourceDocumentRepository.flush();
+		largeObjectCleaner.unlink(textOid);
 	}
 
 	private SourceDocument findOwned(UUID handoverId, UUID fileId) {

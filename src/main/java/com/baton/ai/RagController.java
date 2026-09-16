@@ -185,6 +185,7 @@ public class RagController {
 	@Operation(summary = "파일 추출/임베딩 재처리",
 			description = """
 					텍스트 추출·인덱싱에 실패(FAILED)한 파일을 S3 원본으로 다시 처리한다. 인계자만 가능. 새 처리 상태를 반환한다.
+					- 마스킹 검수를 확정한 뒤 인덱싱에 실패한 파일은 원문을 다시 추출하지 않고, 마스킹된 텍스트로 인덱싱만 다시 한다.
 					- 실패 상태가 아닌 파일 재처리: 409(code=HANDOVER_INVALID_STATE)
 					""")
 	@PostMapping("/files/{fileId}/retry")
@@ -355,6 +356,7 @@ public class RagController {
 					즉시 202 Accepted로 작업 정보를 반환하고, 진행률은 GET /analysis로 폴링한다.
 					- 분석할 업로드 파일이 없음: 400(code=AI_NO_DOCUMENTS)
 					- 이미 진행 중인 작업: 409(code=AI_ANALYSIS_ALREADY_RUNNING)
+					- 마스킹 검수를 확정하지 않은 파일(MASKING_REVIEW·INDEXING)이 있음: 409(code=MASKING_NOT_CONFIRMED)
 					""")
 	@PostMapping("/analysis")
 	@ResponseStatus(HttpStatus.ACCEPTED)
