@@ -35,6 +35,14 @@ jobs:
           --tests 'com.baton.handover.HandoverAnalysisStateTest'
           --no-daemon
 
+      - name: AI usage limit unit tests
+        run: >-
+          ./gradlew test
+          --tests 'com.baton.aiusage.AiUsageGuardTest'
+          --tests 'com.baton.aiusage.AiTaskLockServiceTest'
+          --tests 'com.baton.ai.RagAnalysisServiceCompleteTest'
+          --no-daemon
+
       - name: Masking review unit tests
         run: >-
           ./gradlew test

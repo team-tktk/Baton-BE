@@ -13,6 +13,11 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.baton.aiusage.AiFeature;
+import com.baton.aiusage.AiTask;
+import com.baton.aiusage.AiTaskLockService;
+import com.baton.aiusage.AiUsageGuard;
+import com.baton.handover.HandoverAccess;
 import com.baton.readiness.dto.ApplyFixRequest;
 import com.baton.readiness.dto.ApplyFixResponse;
 import com.baton.readiness.dto.FixAnswerRequest;
@@ -42,7 +47,9 @@ public class ReadinessController {
 
 	private final ReadinessService readinessService;
 	private final ReadinessFixService readinessFixService;
-	private final ReadinessAccess readinessAccess;
+	private final HandoverAccess handoverAccess;
+	private final AiUsageGuard aiUsageGuard;
+	private final AiTaskLockService aiTaskLockService;
 
 	@Operation(summary = "준비도 조회",
 			description = """
@@ -116,7 +123,7 @@ public class ReadinessController {
 					})))
 	@GetMapping
 	public ReadinessResponse get(@PathVariable UUID handoverId, Authentication authentication) {
-		readinessAccess.requireViewer(handoverId, authentication);
+		handoverAccess.requireViewer(handoverId, authentication);
 		return readinessService.getLatest(handoverId);
 	}
 
@@ -126,18 +133,20 @@ public class ReadinessController {
 					문서 내용·업로드 자료·평가 기준 버전이 이전 평가와 같으면 AI를 다시 부르지 않고 같은 결과를 그대로 준다
 					→ 같은 내용에는 항상 같은 점수.
 					- 초안 없음: 404(code=AI_DRAFT_NOT_FOUND)
+					- 같은 인수인계의 평가가 이미 진행 중(중복 클릭 등): 409(code=AI_TASK_ALREADY_RUNNING)
 					""")
 	@PostMapping("/evaluate")
 	public ReadinessResponse evaluate(@PathVariable UUID handoverId, Authentication authentication) {
-		readinessAccess.requireOwner(handoverId, authentication);
-		return readinessService.evaluate(handoverId);
+		handoverAccess.requireOwner(handoverId, authentication);
+		return aiTaskLockService.runExclusive(AiTask.READINESS_EVALUATION, handoverId,
+				() -> readinessService.evaluate(handoverId));
 	}
 
 	@Operation(summary = "준비도 평가 기준",
 			description = "현재 평가 기준 버전의 영역별 확인 내용·배점·문서 섹션, 상태별 환산 비율, 등급 경계. 참여자 모두 가능.")
 	@GetMapping("/rubric")
 	public ReadinessRubricResponse rubric(@PathVariable UUID handoverId, Authentication authentication) {
-		readinessAccess.requireViewer(handoverId, authentication);
+		handoverAccess.requireViewer(handoverId, authentication);
 		return ReadinessRubricResponse.from(ReadinessRubrics.CURRENT);
 	}
 
@@ -150,6 +159,8 @@ public class ReadinessController {
 					- 평가한 적 없음: 404(code=READINESS_NOT_EVALUATED)
 					- 평가 이후 문서가 바뀜: 409(code=READINESS_STALE) → 다시 평가 후 시도
 					- 이미 충분한 항목: 409(code=READINESS_ITEM_SUFFICIENT)
+					- 같은 인수인계의 보완안 생성이 이미 진행 중: 409(code=AI_TASK_ALREADY_RUNNING)
+					- AI 요청 한도 초과(인수인계서 생성·보완안 생성·채팅 합산): 429(code=AI_USAGE_LIMIT_EXCEEDED, Retry-After 헤더·retryAt 포함)
 
 					**before / after 형식(section별)**
 
@@ -207,8 +218,9 @@ public class ReadinessController {
 			@PathVariable UUID handoverId,
 			@PathVariable ReadinessArea area,
 			Authentication authentication) {
-		readinessAccess.requireOwner(handoverId, authentication);
-		return readinessFixService.create(handoverId, area);
+		UUID userId = handoverAccess.requireOwner(handoverId, authentication);
+		return aiTaskLockService.runExclusive(AiTask.READINESS_FIX, handoverId, () -> readinessFixService.create(
+				handoverId, area, () -> aiUsageGuard.acquire(userId, AiFeature.READINESS_FIX, handoverId)));
 	}
 
 	@Operation(summary = "보완안 조회",
@@ -222,7 +234,7 @@ public class ReadinessController {
 			@PathVariable UUID handoverId,
 			@PathVariable UUID fixId,
 			Authentication authentication) {
-		readinessAccess.requireOwner(handoverId, authentication);
+		handoverAccess.requireOwner(handoverId, authentication);
 		return readinessFixService.get(handoverId, fixId);
 	}
 
@@ -234,6 +246,8 @@ public class ReadinessController {
 					- 없는 질문 id: 400(code=BAD_REQUEST)
 					- 이미 적용·취소한 보완안: 409(code=READINESS_FIX_INVALID_STATE)
 					- 그사이 문서가 바뀜: 409(code=AI_DRAFT_REVISION_CONFLICT)
+					- 같은 인수인계의 보완안 생성이 이미 진행 중: 409(code=AI_TASK_ALREADY_RUNNING)
+					- AI 요청 한도 초과(인수인계서 생성·보완안 생성·채팅 합산): 429(code=AI_USAGE_LIMIT_EXCEEDED, Retry-After 헤더·retryAt 포함)
 					""",
 			requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(content = @Content(
 					mediaType = "application/json",
@@ -249,8 +263,9 @@ public class ReadinessController {
 			@PathVariable UUID fixId,
 			@Valid @RequestBody FixAnswerRequest request,
 			Authentication authentication) {
-		readinessAccess.requireOwner(handoverId, authentication);
-		return readinessFixService.answer(handoverId, fixId, request);
+		UUID userId = handoverAccess.requireOwner(handoverId, authentication);
+		return aiTaskLockService.runExclusive(AiTask.READINESS_FIX, handoverId, () -> readinessFixService.answer(
+				handoverId, fixId, request, () -> aiUsageGuard.acquire(userId, AiFeature.READINESS_FIX, handoverId)));
 	}
 
 	@Operation(summary = "보완안 적용",
@@ -281,7 +296,7 @@ public class ReadinessController {
 			@PathVariable UUID fixId,
 			@Valid @RequestBody ApplyFixRequest request,
 			Authentication authentication) {
-		readinessAccess.requireOwner(handoverId, authentication);
+		handoverAccess.requireOwner(handoverId, authentication);
 		return readinessFixService.apply(handoverId, fixId, request.baseRevision());
 	}
 
@@ -296,7 +311,7 @@ public class ReadinessController {
 			@PathVariable UUID handoverId,
 			@PathVariable UUID fixId,
 			Authentication authentication) {
-		readinessAccess.requireOwner(handoverId, authentication);
+		handoverAccess.requireOwner(handoverId, authentication);
 		return readinessFixService.discard(handoverId, fixId);
 	}
 }

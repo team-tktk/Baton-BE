@@ -196,9 +196,13 @@ public class RagAnalysisService {
 	/**
 	 * 모든 질문이 답변/건너뛰기 상태인지 확인한 뒤, 자료 + 답변으로 초안을 "페이지 병렬"로 생성한다.
 	 * 초안은 이 시점에 처음 만들어진다(분석 단계는 질문만 생성하므로).
+	 * 확인 질문 단계(ANSWERING)에서만 가능하다 — 이미 초안을 만든 뒤 다시 부르면 초안을 통째로 다시 만들어
+	 * 사용자가 고친 내용을 덮어쓰기 때문이다. 다시 만들려면 분석부터 다시 시작한다.
+	 * beforeAiCall은 검증을 모두 통과한 뒤 AI 호출 직전에 부른다(사용량 차감).
 	 */
-	public HandoverDraftResponse completeQuestions(UUID handoverId) {
+	public HandoverDraftResponse completeQuestions(UUID handoverId, Runnable beforeAiCall) {
 		CompletionInput input = transactionTemplate.execute(status -> loadCompletionInput(handoverId));
+		beforeAiCall.run();
 
 		HandoverDraftContent content = generateDraftPaged(input.documentsText(), input.qnaText());
 
@@ -227,6 +231,12 @@ public class RagAnalysisService {
 	}
 
 	private CompletionInput loadCompletionInput(UUID handoverId) {
+		Handover handover = loadHandover(handoverId);
+		if (handover.getStatus() != HandoverStatus.ANSWERING) {
+			throw new BusinessException(ErrorCode.HANDOVER_INVALID_STATE,
+					"확인 질문에 답하는 단계에서만 인수인계서를 생성할 수 있습니다: " + handover.getStatus());
+		}
+
 		List<ClarificationQuestion> questions = clarificationQuestionRepository.findAllByHandoverId(handoverId);
 
 		boolean hasPending = questions.stream()

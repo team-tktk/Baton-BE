@@ -41,10 +41,15 @@ import com.baton.ai.dto.QuestionAnswerRequest;
 import com.baton.ai.dto.UpdateDraftRequest;
 import com.baton.ai.dto.SourceDetailResponse;
 import com.baton.ai.dto.SourceEvidenceResponse;
+import com.baton.aiusage.AiFeature;
+import com.baton.aiusage.AiTask;
+import com.baton.aiusage.AiTaskLockService;
+import com.baton.aiusage.AiUsageGuard;
 import com.baton.auth.AuthService;
 import com.baton.common.BusinessException;
 import com.baton.common.ErrorCode;
 import com.baton.handover.Handover;
+import com.baton.handover.HandoverAccess;
 import com.baton.handover.HandoverPermission;
 import com.baton.handover.HandoverRepository;
 import com.baton.masking.MaskingService;
@@ -58,6 +63,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -86,6 +92,9 @@ public class RagController {
 	private final HandoverPermission handoverPermission;
 	private final AuthService authService;
 	private final MaskingService maskingService;
+	private final AiUsageGuard aiUsageGuard;
+	private final AiTaskLockService aiTaskLockService;
+	private final HandoverAccess handoverAccess;
 
 	@Operation(summary = "인수인계 파일 업로드",
 			description = """
@@ -249,6 +258,8 @@ public class RagController {
 					citations[].sourceId == fileId == 업로드 파일(SourceDocument) id로 항상 같은 값이다.
 					원문 메타데이터는 GET /sources/{sourceId}, 원본 파일 다운로드는 GET /files/{fileId}/download로 잇는다.
 					locator는 문서 내 대략 위치(청크 순번). title은 파일명.
+
+					- AI 요청 한도 초과(인수인계서 생성·보완안 생성·채팅 합산): 429(code=AI_USAGE_LIMIT_EXCEEDED, Retry-After 헤더·retryAt 포함)
 					""",
 			requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(content = @Content(
 					mediaType = "application/json",
@@ -321,13 +332,13 @@ public class RagController {
 								""")
 					})))
 	@PostMapping("/chat/messages")
+	@Transactional(propagation = Propagation.NOT_SUPPORTED) // AI 응답을 기다리는 동안 커넥션을 두 개 쥐지 않게
 	public ChatAnswerResponse ask(
 			@PathVariable UUID handoverId,
 			@Valid @RequestBody ChatQuestionRequest request,
 			Authentication authentication) {
-		Handover handover = loadHandover(handoverId);
-		UUID userId = currentUserId(authentication);
-		handoverPermission.requireViewer(handover, userId);
+		UUID userId = handoverAccess.requireViewer(handoverId, authentication);
+		aiUsageGuard.acquire(userId, AiFeature.CHAT, handoverId);
 
 		return ragQueryService.answer(handoverId, userId, request.question());
 	}
@@ -546,14 +557,20 @@ public class RagController {
 
 					**모든 질문에 답할 필요는 없다** — 답하지 않을 질문은 건너뛰기(SKIPPED)만 해두면 된다. 즉 PENDING이 하나도 없으면 호출 가능.
 					답변이 하나도 없고 전부 건너뛰었거나 **질문이 0개면** 초안 재생성 없이 그대로 완료 처리한다.
+					- 확인 질문 단계(ANSWERING)가 아님(이미 초안을 만든 뒤 다시 호출 등): 409(code=HANDOVER_INVALID_STATE)
+					  → 인수인계서를 다시 만들려면 POST /analysis로 분석부터 다시 시작한다.
 					- 아직 PENDING(답변·건너뛰기 안 한) 질문이 남아 있음: 409(code=AI_QUESTIONS_INCOMPLETE)
+					- 같은 인수인계의 인수인계서 생성이 이미 진행 중(중복 클릭 등): 409(code=AI_TASK_ALREADY_RUNNING)
+					- AI 요청 한도 초과(인수인계서 생성·보완안 생성·채팅 합산): 429(code=AI_USAGE_LIMIT_EXCEEDED)
 					""")
 	@PostMapping("/questions/complete")
+	@Transactional(propagation = Propagation.NOT_SUPPORTED) // AI 응답을 기다리는 동안 커넥션을 쥐지 않게
 	public HandoverDraftResponse completeQuestions(@PathVariable UUID handoverId, Authentication authentication) {
-		Handover handover = loadHandover(handoverId);
-		handoverPermission.requireOwner(handover, currentUserId(authentication));
+		UUID userId = handoverAccess.requireOwner(handoverId, authentication);
 
-		return ragAnalysisService.completeQuestions(handoverId);
+		return aiTaskLockService.runExclusive(AiTask.DRAFT_GENERATION, handoverId, () ->
+				ragAnalysisService.completeQuestions(handoverId,
+						() -> aiUsageGuard.acquire(userId, AiFeature.DRAFT_GENERATION, handoverId)));
 	}
 
 	@Operation(summary = "AI 원문 근거 목록",
