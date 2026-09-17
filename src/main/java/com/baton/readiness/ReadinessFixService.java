@@ -77,8 +77,11 @@ public class ReadinessFixService {
 	private record FixContext(ReadinessFix fix, ReadinessItem item, HandoverDraftContent content) {
 	}
 
-	/** 현재 평가의 부족 항목 하나로 보완안을 만든다. */
-	public ReadinessFixResponse create(UUID handoverId, ReadinessArea area) {
+	/**
+	 * 현재 평가의 부족 항목 하나로 보완안을 만든다.
+	 * beforeAiCall은 요청 검증을 모두 통과한 뒤 AI 호출 직전에 부른다(사용량 차감). 거절될 요청은 차감하지 않는다.
+	 */
+	public ReadinessFixResponse create(UUID handoverId, ReadinessArea area, Runnable beforeAiCall) {
 		FixContext context = transactionTemplate.execute(status -> {
 			ReadinessEvaluation evaluation = readinessService.requireCurrent(handoverId);
 			ReadinessItem item = evaluation.item(area)
@@ -93,6 +96,7 @@ public class ReadinessFixService {
 		});
 
 		ReadinessFix fix = context.fix();
+		beforeAiCall.run();
 		applyGeneration(fix, context.content(), generate(fix, context.item(), context.content()));
 		ReadinessFix saved = transactionTemplate.execute(status -> fixRepository.save(fix));
 		return ReadinessFixResponse.of(saved, fix.getBaseRevision());
@@ -106,7 +110,7 @@ public class ReadinessFixService {
 	}
 
 	/** 추가 질문에 답하고, 답변까지 반영해 수정안을 다시 만든다. */
-	public ReadinessFixResponse answer(UUID handoverId, UUID fixId, FixAnswerRequest request) {
+	public ReadinessFixResponse answer(UUID handoverId, UUID fixId, FixAnswerRequest request, Runnable beforeAiCall) {
 		FixContext context = transactionTemplate.execute(status -> {
 			ReadinessFix fix = loadFix(handoverId, fixId);
 			HandoverDraft draft = loadDraft(handoverId);
@@ -119,6 +123,7 @@ public class ReadinessFixService {
 		});
 
 		ReadinessFix fix = context.fix();
+		beforeAiCall.run();
 		GeneratedResult generated = generate(fix, context.item(), context.content());
 
 		return transactionTemplate.execute(status -> {

@@ -1,4 +1,4 @@
-package com.baton.readiness;
+package com.baton.handover;
 
 import java.util.UUID;
 
@@ -9,32 +9,33 @@ import org.springframework.transaction.annotation.Transactional;
 import com.baton.auth.AuthService;
 import com.baton.common.BusinessException;
 import com.baton.common.ErrorCode;
-import com.baton.handover.Handover;
-import com.baton.handover.HandoverPermission;
-import com.baton.handover.HandoverRepository;
 
 import lombok.RequiredArgsConstructor;
 
 /**
- * 준비도 API 권한 검사. 평가·보완안 생성은 AI를 호출해 오래 걸리므로 컨트롤러 전체를 트랜잭션으로 묶지 않고,
- * participants(LAZY)를 읽는 권한 검사만 짧은 트랜잭션에서 끝낸다.
+ * AI를 호출하는 API의 권한 검사. AI 호출은 오래 걸리므로 컨트롤러 전체를 트랜잭션으로 묶지 않고,
+ * participants(LAZY)를 읽는 권한 검사만 짧은 트랜잭션에서 끝낸다. 둘 다 현재 사용자 id를 돌려준다.
  */
 @Component
 @RequiredArgsConstructor
-public class ReadinessAccess {
+public class HandoverAccess {
 
 	private final HandoverRepository handoverRepository;
 	private final HandoverPermission handoverPermission;
 	private final AuthService authService;
 
 	@Transactional(readOnly = true)
-	public void requireViewer(UUID handoverId, Authentication authentication) {
-		handoverPermission.requireViewer(loadHandover(handoverId), currentUserId(authentication));
+	public UUID requireViewer(UUID handoverId, Authentication authentication) {
+		UUID userId = currentUserId(authentication);
+		handoverPermission.requireViewer(loadHandover(handoverId), userId);
+		return userId;
 	}
 
 	@Transactional(readOnly = true)
-	public void requireOwner(UUID handoverId, Authentication authentication) {
-		handoverPermission.requireOwner(loadHandover(handoverId), currentUserId(authentication));
+	public UUID requireOwner(UUID handoverId, Authentication authentication) {
+		UUID userId = currentUserId(authentication);
+		handoverPermission.requireOwner(loadHandover(handoverId), userId);
+		return userId;
 	}
 
 	private Handover loadHandover(UUID handoverId) {

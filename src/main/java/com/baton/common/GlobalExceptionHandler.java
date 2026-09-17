@@ -17,6 +17,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
+import com.baton.aiusage.AiUsageLimitExceededException;
+
 /**
  * 모든 에러를 한 곳에서 ProblemDetail(RFC 9457)로 변환하는 단일 지점.
  * 개별 컨트롤러/서비스는 예외만 던지고 여기서 모양을 맞춘다 → 두 명이 짜도 응답이 안 어긋난다.
@@ -45,6 +47,23 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 	@ExceptionHandler(BusinessException.class)
 	public ProblemDetail handleBusiness(BusinessException e) {
 		return problemOf(e.getErrorCode(), e.getMessage());
+	}
+
+	/**
+	 * AI 요청 한도 초과 → 429 + Retry-After 헤더. 프론트가 버튼 옆에 다시 가능한 시각을 안내할 수 있도록
+	 * 어떤 한도(scope·window·limit)에 걸렸는지와 retryAt·retryAfterSeconds를 함께 싣는다.
+	 */
+	@ExceptionHandler(AiUsageLimitExceededException.class)
+	public ResponseEntity<ProblemDetail> handleAiUsageLimit(AiUsageLimitExceededException e) {
+		ProblemDetail problem = problemOf(e.getErrorCode(), e.getMessage());
+		problem.setProperty("scope", e.getScope().name());
+		problem.setProperty("window", e.getWindow().name());
+		problem.setProperty("limit", e.getLimit());
+		problem.setProperty("retryAt", e.getRetryAt().toString());
+		problem.setProperty("retryAfterSeconds", e.getRetryAfterSeconds());
+		return ResponseEntity.status(e.getErrorCode().getStatus())
+				.header(HttpHeaders.RETRY_AFTER, String.valueOf(e.getRetryAfterSeconds()))
+				.body(problem);
 	}
 
 	/** 로그인 실패 등 인증 예외 → 401. 어느 쪽이 틀렸는지 구분해 노출하지 않는다. */

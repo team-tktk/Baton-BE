@@ -106,6 +106,26 @@ app:
   ai:
     # 인수인계 자료 생성(초안·질문·재생성) 전용 모델(품질용). 채팅·브리핑은 위 spring.ai.openai.chat 모델(gpt-5.4-nano) 사용.
     analysis-model: gpt-5.4
+    # AI 사용량 보호 — 비정상적인 연속 호출 차단용. 인수인계서 생성·보완안 생성·채팅 요청을 합산해서 센다.
+    # 한도값은 DB ai_usage_limits 테이블이 우선이고, 운영 중에는 그 테이블을 UPDATE해서 배포 없이 조정한다
+    # (settings-cache-ttl 안에 모든 서버에 반영). 아래 defaults는 테이블에 행이 없을 때만 쓴다.
+    # 조정 방법은 db/migrations/2026-09-17-ai-usage-limit.sql 참고.
+    usage-limit:
+      enabled: ${AI_USAGE_LIMIT_ENABLED:true}
+      settings-cache-ttl: 30s
+      task-lock-ttl: 5m          # 같은 인수인계 AI 작업 중복 실행 잠금 최대 유지 시간(서버가 죽어도 이후 자동 해제)
+      retention: 2d              # 사용 기록 보관 기간(하루 한도 계산에 필요한 기간보다 길게)
+      defaults:
+        user:
+          enabled: true
+          per-minute: 10
+          per-hour: 100
+          per-day: 200
+        organization:
+          enabled: false         # 팀 이름이 회원가입 자유입력이라 신뢰할 수 없어 기본으로 끈다
+          per-minute: 10
+          per-hour: 100
+          per-day: 200
   cors:
     allowed-origins: http://localhost:3000,http://localhost:5173,https://baton-fe.vercel.app,https://baton-fe-*.vercel.app,https://d1rk2gzucjdf8h.cloudfront.net
   s3:

@@ -50,6 +50,10 @@ public enum ErrorCode {
 	AI_ANALYSIS_RETRY_NOT_ALLOWED(HttpStatus.CONFLICT, "실패한 분석 작업만 재시도할 수 있습니다"),
 	AI_DRAFT_REVISION_CONFLICT(HttpStatus.CONFLICT, "문서가 그사이 변경되었습니다. 최신 문서를 확인한 뒤 다시 시도해주세요"),
 
+	// ── AI 사용량(ai-usage) ─────────────────────────────────
+	AI_USAGE_LIMIT_EXCEEDED(HttpStatus.TOO_MANY_REQUESTS, "AI 요청 한도를 초과했습니다"),
+	AI_TASK_ALREADY_RUNNING(HttpStatus.CONFLICT, "같은 AI 작업이 이미 진행 중입니다"),
+
 	// ── 준비도(readiness) ───────────────────────────────────
 	READINESS_NOT_EVALUATED(HttpStatus.NOT_FOUND, "아직 준비도 평가 결과가 없습니다"),
 	READINESS_STALE(HttpStatus.CONFLICT, "문서가 바뀌어 준비도를 다시 평가해야 합니다"),
