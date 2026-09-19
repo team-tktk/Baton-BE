@@ -100,7 +100,7 @@ public class ReadinessService {
 
 	/** 현재 문서를 평가한다. 같은 내용의 평가가 이미 있으면 AI를 다시 부르지 않는다. */
 	public ReadinessResponse evaluate(UUID handoverId) {
-		return toResponse(evaluateInternal(handoverId), false);
+		return toResponseInTransaction(evaluateInternal(handoverId), false);
 	}
 
 	ReadinessEvaluation evaluateInternal(UUID handoverId) {
@@ -128,7 +128,7 @@ public class ReadinessService {
 		Optional<ReadinessEvaluation> cached = transactionTemplate.execute(
 				status -> findCurrent(handoverId, snapshot.hash()));
 		if (cached.isPresent()) {
-			return toResponse(cached.get(), false);
+			return toResponseInTransaction(cached.get(), false);
 		}
 		ReadinessRubric rubric = ReadinessRubrics.CURRENT;
 		Optional<ReadinessEvaluation> base = transactionTemplate.execute(status -> evaluationRepository.findById(baseEvaluationId))
@@ -143,7 +143,7 @@ public class ReadinessService {
 
 		ReadinessEvaluation saved = transactionTemplate.execute(status -> evaluationRepository.save(ReadinessEvaluation.create(
 				handoverId, rubric, snapshot.hash(), snapshot.revision(), items)));
-		return toResponse(saved, false);
+		return toResponseInTransaction(saved, false);
 	}
 
 	/** 다시 평가한 영역은 새 결과로, 나머지는 직전 평가 결과로. 영역 정의 순서를 유지한다. */
@@ -172,6 +172,15 @@ public class ReadinessService {
 		ReadinessRubric rubric = ReadinessRubrics.find(evaluation.getRubricVersion())
 				.orElseThrow(() -> new IllegalStateException("알 수 없는 평가 기준 버전: " + evaluation.getRubricVersion()));
 		return ReadinessResponse.of(evaluation, rubric, stale, deferredQuestions(evaluation.getHandoverId()));
+	}
+
+	/**
+	 * 확인 질문은 evidence·answer가 PostgreSQL Large Object(@Lob)인 엔티티다.
+	 * open-in-view가 꺼진 상태에서 응답을 만들면 Hibernate가 그 스트림을 자동 커밋 연결로 읽을 수 있으므로,
+	 * 질문 조회부터 DTO 변환까지는 반드시 짧은 트랜잭션 안에서 끝낸다. AI 호출은 이 경계 밖에 있다.
+	 */
+	private ReadinessResponse toResponseInTransaction(ReadinessEvaluation evaluation, boolean stale) {
+		return transactionTemplate.execute(status -> toResponse(evaluation, stale));
 	}
 
 	/** "나중에 답하기"로 미룬 확인 질문을 중요도순으로. 평가 결과와 달리 매번 현재 상태로 읽는다(답하면 바로 빠진다). */
