@@ -150,4 +150,5 @@ app:
     signing-secret: ${SLACK_SIGNING_SECRET:}
     token-encryption-key: ${SLACK_TOKEN_ENCRYPTION_KEY:}
     redirect-uri: ${SLACK_REDIRECT_URI:http://127.0.0.1:8081/api/v1/integrations/slack/oauth/callback}
+    frontend-callback-uri: ${SLACK_FRONTEND_CALLBACK_URI:}
     sync-interval-ms: ${SLACK_SYNC_INTERVAL_MS:60000}
