@@ -4,10 +4,12 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -110,11 +112,48 @@ public class ReadinessService {
 		}
 
 		ReadinessRubric rubric = ReadinessRubrics.CURRENT;
-		GeneratedAssessment generated = generateAssessment(snapshot, rubric);
+		GeneratedAssessment generated = generateAssessment(snapshot, rubric, EnumSet.allOf(ReadinessArea.class));
 		List<ReadinessItem> items = normalizer.normalize(generated, snapshot.content(), snapshot.sources());
 
 		return transactionTemplate.execute(status -> evaluationRepository.save(ReadinessEvaluation.create(
 				handoverId, rubric, snapshot.hash(), snapshot.revision(), items)));
+	}
+
+	/**
+	 * 보완안 적용 뒤 재평가. 바뀐 섹션이 걸린 영역(areas)만 AI로 다시 평가하고, 나머지 영역은 직전 평가(base) 결과를 그대로 쓴다
+	 * — 고치지 않은 영역의 상태가 흔들려 오른 점수를 상쇄하지 않게. 직전 평가가 없거나 평가 기준 버전이 다르면 전체를 평가한다.
+	 */
+	public ReadinessResponse reevaluate(UUID handoverId, UUID baseEvaluationId, Set<ReadinessArea> areas) {
+		Snapshot snapshot = transactionTemplate.execute(status -> snapshot(handoverId));
+		Optional<ReadinessEvaluation> cached = transactionTemplate.execute(
+				status -> findCurrent(handoverId, snapshot.hash()));
+		if (cached.isPresent()) {
+			return toResponse(cached.get(), false);
+		}
+		ReadinessRubric rubric = ReadinessRubrics.CURRENT;
+		Optional<ReadinessEvaluation> base = transactionTemplate.execute(status -> evaluationRepository.findById(baseEvaluationId))
+				.filter(evaluation -> evaluation.getRubricVersion().equals(rubric.version()));
+		if (base.isEmpty() || areas.isEmpty()) {
+			return evaluate(handoverId);
+		}
+
+		GeneratedAssessment generated = generateAssessment(snapshot, rubric, areas);
+		List<ReadinessItem> fresh = normalizer.normalize(generated, snapshot.content(), snapshot.sources());
+		List<ReadinessItem> items = mergeItems(base.get(), fresh, areas);
+
+		ReadinessEvaluation saved = transactionTemplate.execute(status -> evaluationRepository.save(ReadinessEvaluation.create(
+				handoverId, rubric, snapshot.hash(), snapshot.revision(), items)));
+		return toResponse(saved, false);
+	}
+
+	/** 다시 평가한 영역은 새 결과로, 나머지는 직전 평가 결과로. 영역 정의 순서를 유지한다. */
+	static List<ReadinessItem> mergeItems(ReadinessEvaluation base, List<ReadinessItem> fresh, Set<ReadinessArea> areas) {
+		return List.of(ReadinessArea.values()).stream()
+				.map(area -> (areas.contains(area) ? fresh.stream() : base.getItems().stream())
+						.filter(item -> item.area() == area)
+						.findFirst())
+				.flatMap(Optional::stream)
+				.toList();
 	}
 
 	/**
@@ -137,11 +176,17 @@ public class ReadinessService {
 
 	/** "나중에 답하기"로 미룬 확인 질문을 중요도순으로. 평가 결과와 달리 매번 현재 상태로 읽는다(답하면 바로 빠진다). */
 	private List<DeferredQuestionResponse> deferredQuestions(UUID handoverId) {
+		return deferredClarificationQuestions(handoverId).stream()
+				.map(q -> DeferredQuestionResponse.from(q, areaOf(q)))
+				.toList();
+	}
+
+	/** 미룬 확인 질문(중요도순). 보완을 시작할 때 해당 영역의 질문으로 함께 묻는다. 트랜잭션 안에서 호출한다. */
+	List<ClarificationQuestion> deferredClarificationQuestions(UUID handoverId) {
 		return clarificationQuestionRepository
 				.findAllByHandoverIdAndStatus(handoverId, ClarificationQuestionStatus.DEFERRED).stream()
 				.sorted(Comparator.comparing((ClarificationQuestion q) -> q.getPriority() == null ? Integer.MAX_VALUE : q.getPriority())
 						.thenComparing(ClarificationQuestion::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())))
-				.map(q -> DeferredQuestionResponse.from(q, areaOf(q)))
 				.toList();
 	}
 
@@ -197,10 +242,10 @@ public class ReadinessService {
 		}
 	}
 
-	private GeneratedAssessment generateAssessment(Snapshot snapshot, ReadinessRubric rubric) {
+	private GeneratedAssessment generateAssessment(Snapshot snapshot, ReadinessRubric rubric, Set<ReadinessArea> areas) {
 		SystemPromptTemplate template = new SystemPromptTemplate(ReadinessPrompts.EVALUATE_SYSTEM_TEMPLATE);
 		Message systemMessage = template.createMessage(Map.of(
-				"criteria", describeCriteria(rubric),
+				"criteria", describeCriteria(rubric, areas),
 				"draft", writeJson(snapshot.content()),
 				"sources", snapshot.sourcesDescription(),
 				"documents", snapshot.documentsText()));
@@ -216,10 +261,14 @@ public class ReadinessService {
 		}
 	}
 
-	private static String describeCriteria(ReadinessRubric rubric) {
+	/** 평가할 영역만. 섹션은 "화면 이름(코드)"로 넘겨 AI가 문장에는 화면 이름을, targetSections에는 코드를 쓰게 한다. */
+	static String describeCriteria(ReadinessRubric rubric, Set<ReadinessArea> areas) {
 		return List.of(ReadinessArea.values()).stream()
+				.filter(areas::contains)
 				.map(area -> "- %s / %s / %s / %s".formatted(area.name(), area.getLabel(), rubric.criteria().get(area),
-						area.getSections().stream().map(DraftSection::name).collect(Collectors.joining(", "))))
+						area.getSections().stream()
+								.map(section -> section.getLabel() + "(" + section.name() + ")")
+								.collect(Collectors.joining(", "))))
 				.collect(Collectors.joining("\n"));
 	}
 

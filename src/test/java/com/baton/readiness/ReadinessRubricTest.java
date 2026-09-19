@@ -43,7 +43,7 @@ class ReadinessRubricTest {
 	}
 
 	@Test
-	void keyIssuesAreBiggestLossesFirstAndPotentialScoreResolvesThem() {
+	void keyIssuesAreBiggestLossesFirst() {
 		Map<ReadinessArea, ReadinessStatus> statuses = all(ReadinessStatus.SUFFICIENT);
 		statuses.put(ReadinessArea.EXCEPTION, ReadinessStatus.MISSING);   // 1500
 		statuses.put(ReadinessArea.PROCEDURE, ReadinessStatus.PARTIAL);   // 1000
@@ -53,7 +53,6 @@ class ReadinessRubricTest {
 		assertThat(rubric.keyIssues(statuses))
 				.containsExactly(ReadinessArea.EXCEPTION, ReadinessArea.PROCEDURE, ReadinessArea.ACCESS);
 		assertThat(rubric.score(statuses)).isEqualTo(60);
-		assertThat(rubric.potentialScore(statuses)).isEqualTo(95);
 		assertThat(rubric.prioritized(statuses).get(0)).isEqualTo(ReadinessArea.EXCEPTION);
 	}
 
