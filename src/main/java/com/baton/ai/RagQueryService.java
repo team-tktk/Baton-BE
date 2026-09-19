@@ -3,7 +3,6 @@ package com.baton.ai;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -11,10 +10,6 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.prompt.SystemPromptTemplate;
-import org.springframework.ai.document.Document;
-import org.springframework.ai.vectorstore.SearchRequest;
-import org.springframework.ai.vectorstore.VectorStore;
-import org.springframework.ai.vectorstore.filter.FilterExpressionBuilder;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -37,38 +32,36 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class RagQueryService {
 
-	private static final int TOP_K = 5;
-	private static final double SIMILARITY_THRESHOLD = 0.3;
 	private static final int DEFAULT_PAGE_SIZE = 20;
 	private static final int MAX_PAGE_SIZE = 100;
 	private static final String NOT_FOUND_MARKER = "NOT_FOUND";
+	private static final String CONFIRM_REQUIRED_MARKER = "CONFIRM_REQUIRED";
 
-	private final VectorStore vectorStore;
+	private final HybridRagRetriever retriever;
 	private final ChatClient chatClient;
-	private final SourceDocumentRepository sourceDocumentRepository;
 	private final ChatMessageRepository chatMessageRepository;
 
 	@Transactional
 	public ChatAnswerResponse answer(UUID handoverId, UUID askedBy, String question) {
-		List<Document> matches = search(handoverId, question).stream()
-				.filter(match -> currentSource(handoverId, match) != null).toList();
+		List<RagEvidence> matches = retriever.retrieve(handoverId, question);
 
 		if (matches.isEmpty()) {
 			return fallbackToGeneralKnowledge(handoverId, askedBy, question);
 		}
 
 		String context = matches.stream()
-				.map(Document::getText)
+				.map(RagEvidence::context)
 				.collect(Collectors.joining("\n---\n"));
 
-		String answer = generateAnswer(context, question);
+		GeneratedAnswer generated = parseGeneratedAnswer(generateAnswer(context, question));
 
-		if (answer == null || answer.isBlank() || answer.contains(NOT_FOUND_MARKER)) {
+		if (generated.answer() == null || generated.answer().isBlank() || generated.answer().contains(NOT_FOUND_MARKER)) {
 			return fallbackToGeneralKnowledge(handoverId, askedBy, question);
 		}
 
 		ChatMessage saved = chatMessageRepository.save(ChatMessage.create(
-				handoverId, askedBy, question, answer.trim(), true, buildCitations(handoverId, matches)));
+				handoverId, askedBy, question, generated.answer().trim(), true,
+				generated.requiresConfirmation(), buildCitations(matches)));
 		return ChatAnswerResponse.from(saved);
 	}
 
@@ -107,9 +100,15 @@ public class RagQueryService {
 	 * AI가 판단해서 답하게 한다. persistNotFound는 이 판단 호출 자체가 실패했을 때만 쓰는 최후 수단이다.
 	 */
 	private ChatAnswerResponse fallbackToGeneralKnowledge(UUID handoverId, UUID askedBy, String question) {
-		String answer = generateGeneralKnowledgeAnswer(question);
+		String answer;
+		try {
+			answer = generateGeneralKnowledgeAnswer(question);
+		} catch (RuntimeException e) {
+			log.warn("General-knowledge fallback failed for handoverId={}", handoverId, e);
+			return persistNotFound(handoverId, askedBy, question);
+		}
 
-		if (answer == null || answer.isBlank()) {
+		if (answer == null || answer.isBlank() || answer.contains(NOT_FOUND_MARKER)) {
 			return persistNotFound(handoverId, askedBy, question);
 		}
 
@@ -129,21 +128,6 @@ public class RagQueryService {
 				.content();
 	}
 
-	private List<Document> search(UUID handoverId, String question) {
-		var filterExpression = new FilterExpressionBuilder()
-				.eq("handoverId", handoverId.toString())
-				.build();
-
-		SearchRequest searchRequest = SearchRequest.builder()
-				.query(question)
-				.topK(TOP_K)
-				.similarityThreshold(SIMILARITY_THRESHOLD)
-				.filterExpression(filterExpression)
-				.build();
-
-		return vectorStore.similaritySearch(searchRequest);
-	}
-
 	private String generateAnswer(String context, String question) {
 		SystemPromptTemplate systemPromptTemplate = new SystemPromptTemplate(RagPrompts.SYSTEM_TEMPLATE);
 		Message systemMessage = systemPromptTemplate.createMessage(Map.of("context", context));
@@ -156,24 +140,16 @@ public class RagQueryService {
 	}
 
 	/** Preserve different excerpts from the same PDF for previous/next navigation. */
-	private List<Citation> buildCitations(UUID handoverId, List<Document> matches) {
-		return matches.stream().map(match -> {
-			SourceDocument source = currentSource(handoverId, match);
-			return source == null ? null : EvidenceCitations.fromMatch(source, match);
-		}).filter(Objects::nonNull).distinct().toList();
+	private List<Citation> buildCitations(List<RagEvidence> matches) {
+		return matches.stream().map(RagEvidence::citation).distinct().toList();
 	}
 
-	private SourceDocument currentSource(UUID handoverId, Document match) {
-		Object rawId = match.getMetadata().get("sourceDocumentId");
-		if (rawId == null) return null;
-		try {
-			return sourceDocumentRepository.findById(UUID.fromString(rawId.toString()))
-					.filter(source -> handoverId.equals(source.getHandoverId()) && source.isEnabled()
-							&& source.getStatus() == SourceDocumentStatus.INDEXED
-							&& source.getChunkIds() != null && source.getChunkIds().contains(match.getId()))
-					.orElse(null);
-		} catch (IllegalArgumentException e) {
-			return null;
-		}
+	private GeneratedAnswer parseGeneratedAnswer(String raw) {
+		if (raw == null) return new GeneratedAnswer(null, false);
+		boolean requiresConfirmation = raw.contains(CONFIRM_REQUIRED_MARKER);
+		String answer = raw.replace(CONFIRM_REQUIRED_MARKER, "").trim();
+		return new GeneratedAnswer(answer, requiresConfirmation);
 	}
+
+	private record GeneratedAnswer(String answer, boolean requiresConfirmation) { }
 }

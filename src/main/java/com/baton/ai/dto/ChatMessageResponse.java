@@ -13,6 +13,7 @@ public record ChatMessageResponse(
 		String answer,
 		boolean grounded,
 		AnswerSource answerSource,
+		boolean requiresConfirmation,
 		List<Citation> citations,
 		Instant createdAt) {
 
@@ -24,6 +25,7 @@ public record ChatMessageResponse(
 				message.getAnswer(),
 				message.isGrounded(),
 				resolveAnswerSource(message),
+				message.isRequiresConfirmation(),
 				message.getCitations(),
 				message.getCreatedAt());
 	}

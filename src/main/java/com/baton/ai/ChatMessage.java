@@ -50,6 +50,10 @@ public class ChatMessage {
 	@Column(nullable = false)
 	private boolean grounded;
 
+	/** 서로 다른 최신 근거가 충돌해 담당자 확인이 필요한 답변인지. */
+	@Column(name = "requires_confirmation", nullable = false, columnDefinition = "boolean not null default false")
+	private boolean requiresConfirmation;
+
 	@JdbcTypeCode(SqlTypes.JSON)
 	@Column(nullable = false)
 	private List<Citation> citations;
@@ -57,17 +61,24 @@ public class ChatMessage {
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private Instant createdAt;
 
-	private ChatMessage(UUID handoverId, UUID askedBy, String question, String answer, boolean grounded, List<Citation> citations) {
+	private ChatMessage(UUID handoverId, UUID askedBy, String question, String answer, boolean grounded,
+			boolean requiresConfirmation, List<Citation> citations) {
 		this.handoverId = handoverId;
 		this.askedBy = askedBy;
 		this.question = question;
 		this.answer = answer;
 		this.grounded = grounded;
+		this.requiresConfirmation = requiresConfirmation;
 		this.citations = citations;
 	}
 
 	public static ChatMessage create(UUID handoverId, UUID askedBy, String question, String answer, boolean grounded, List<Citation> citations) {
-		return new ChatMessage(handoverId, askedBy, question, answer, grounded, citations);
+		return create(handoverId, askedBy, question, answer, grounded, false, citations);
+	}
+
+	public static ChatMessage create(UUID handoverId, UUID askedBy, String question, String answer, boolean grounded,
+			boolean requiresConfirmation, List<Citation> citations) {
+		return new ChatMessage(handoverId, askedBy, question, answer, grounded, requiresConfirmation, citations);
 	}
 
 	@PrePersist
