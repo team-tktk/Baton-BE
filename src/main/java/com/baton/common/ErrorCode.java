@@ -47,6 +47,8 @@ public enum ErrorCode {
 	AI_EXTERNAL_SOURCE_INVALID_URL(HttpStatus.BAD_REQUEST, "허용되지 않는 웹 주소입니다"),
 	AI_EXTERNAL_SOURCE_FETCH_FAILED(HttpStatus.UNPROCESSABLE_ENTITY, "웹 자료를 가져오지 못했습니다"),
 	AI_EXTERNAL_SOURCE_EMPTY(HttpStatus.UNPROCESSABLE_ENTITY, "저장할 자료 내용이 없습니다"),
+	SLACK_NOT_CONFIGURED(HttpStatus.SERVICE_UNAVAILABLE, "Slack 연동 설정이 필요합니다"),
+	SLACK_OAUTH_FAILED(HttpStatus.BAD_REQUEST, "Slack 연결 인증에 실패했습니다"),
 	AI_QUESTIONS_INCOMPLETE(HttpStatus.CONFLICT, "답변하지 않은 확인 질문이 있습니다"),
 	AI_ANALYSIS_JOB_NOT_FOUND(HttpStatus.NOT_FOUND, "분석 작업을 찾을 수 없습니다"),
 	AI_ANALYSIS_ALREADY_RUNNING(HttpStatus.CONFLICT, "이미 분석 작업이 진행 중입니다"),

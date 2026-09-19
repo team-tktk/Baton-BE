@@ -1,0 +1,6 @@
+package com.baton.slack;
+import java.time.Instant; import java.util.*; import org.springframework.data.jpa.repository.JpaRepository;
+interface SlackConnectionRepository extends JpaRepository<SlackConnection,UUID>{Optional<SlackConnection> findByOwnerIdAndTeamId(UUID owner,String team);List<SlackConnection> findAllByTeamId(String team);List<SlackConnection> findAllByOwnerId(UUID owner);}
+interface SlackSubscriptionRepository extends JpaRepository<SlackSubscription,UUID>{List<SlackSubscription> findAllByEnabledTrue();List<SlackSubscription> findAllByConnectionIdAndChannelIdAndEnabledTrue(UUID c,String ch);Optional<SlackSubscription> findByHandoverIdAndConnectionIdAndChannelId(UUID h,UUID c,String ch);}
+interface SlackOAuthStateRepository extends JpaRepository<SlackOAuthState,String>{long deleteByExpiresAtBefore(Instant now);}
+interface SlackImportedMessageRepository extends JpaRepository<SlackImportedMessage,UUID>{Optional<SlackImportedMessage> findByHandoverIdAndConnectionIdAndChannelIdAndMessageTs(UUID h,UUID c,String ch,String ts);List<SlackImportedMessage> findAllByHandoverIdAndConnectionIdAndChannelId(UUID h,UUID c,String ch);}
