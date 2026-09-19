@@ -1,7 +1,6 @@
 package com.baton.readiness;
 
 import java.util.Comparator;
-import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 
@@ -14,7 +13,7 @@ import java.util.Map;
  * @param statusPercent 상태별로 배점의 몇 %를 인정할지(0~100).
  * @param readyScore    이 점수 이상이면 READY.
  * @param minimumScore  이 점수 이상이면 NEEDS_IMPROVEMENT, 미만이면 NOT_READY.
- * @param keyIssueCount "중요한 확인"으로 먼저 보여줄 부족 항목 수(보완 후 예상 점수도 이 개수 기준).
+ * @param keyIssueCount "중요한 확인"으로 먼저 보여줄 부족 항목 수.
  */
 public record ReadinessRubric(
 		String version,
@@ -66,16 +65,6 @@ public record ReadinessRubric(
 			centiPoints += (long) weight(area) * areaPercent(statusOf(statuses, area));
 		}
 		return (int) ((centiPoints + 50) / 100);
-	}
-
-	/** 중요한 확인 항목만 모두 충분해졌을 때의 예상 점수. */
-	public int potentialScore(Map<ReadinessArea, ReadinessStatus> statuses) {
-		Map<ReadinessArea, ReadinessStatus> resolved = new EnumMap<>(ReadinessArea.class);
-		for (ReadinessArea area : ReadinessArea.values()) {
-			resolved.put(area, statusOf(statuses, area));
-		}
-		keyIssues(statuses).forEach(area -> resolved.put(area, ReadinessStatus.SUFFICIENT));
-		return score(resolved);
 	}
 
 	/** 점수를 가장 많이 잃은 순서의 부족 영역(최대 keyIssueCount개). 동점이면 영역 정의 순서. */

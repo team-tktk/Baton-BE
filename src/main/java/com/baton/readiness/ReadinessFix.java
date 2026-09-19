@@ -3,6 +3,7 @@ package com.baton.readiness;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.hibernate.annotations.JdbcTypeCode;
@@ -30,9 +31,10 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 /**
- * 부족 항목 하나에 대한 보완안. 문서 섹션 하나만 대상으로 하며, 사용자가 적용하기 전에는 문서를 바꾸지 않는다.
- * before/after는 대상 섹션만 채운 HandoverDraftContent 스냅샷이다(나머지 섹션은 null).
- * baseRevision은 보완안을 만들 때 본 문서 버전으로, 적용 시점의 문서 버전과 다르면 적용하지 않는다.
+ * 부족 영역 여러 개를 한 번에 보완하는 보완안. 사용자가 적용하기 전에는 문서를 바꾸지 않는다.
+ * 흐름: 시작(평가의 질문·미룬 확인 질문을 모음, AI 호출 없음) → 답변 저장 → 보완안 만들기(AI 1회) → 적용.
+ * before/after는 고칠 섹션(sections)만 채운 HandoverDraftContent 스냅샷이다(나머지 섹션은 null).
+ * baseRevision은 보완을 시작할 때 본 문서 버전으로, 적용 시점의 문서 버전과 다르면 적용하지 않는다.
  */
 @Entity
 @Table(name = "readiness_fixes",
@@ -51,13 +53,15 @@ public class ReadinessFix {
 	@Column(name = "evaluation_id", nullable = false)
 	private UUID evaluationId;
 
-	@Enumerated(EnumType.STRING)
-	@Column(nullable = false, length = 30)
-	private ReadinessArea area;
+	/** 보완할 영역별 상태·고칠 섹션·결과. 요청한 영역 순서. */
+	@JdbcTypeCode(SqlTypes.JSON)
+	@Column(name = "area_results", nullable = false)
+	private List<FixAreaResult> areaResults;
 
-	@Enumerated(EnumType.STRING)
-	@Column(nullable = false, length = 30)
-	private DraftSection section;
+	/** 고칠 수 있는 섹션(영역별 섹션의 합집합). */
+	@JdbcTypeCode(SqlTypes.JSON)
+	@Column(nullable = false)
+	private List<DraftSection> sections;
 
 	@Enumerated(EnumType.STRING)
 	@Column(nullable = false, length = 20)
@@ -74,21 +78,14 @@ public class ReadinessFix {
 	@Column(name = "before_content", nullable = false)
 	private HandoverDraftContent before;
 
-	/** 수정안. 추가 질문 답변 대기 중이면 null. */
+	/** 수정안(수정안이 있는 영역의 섹션만 바뀌고, 나머지 섹션은 before와 같다). 수정안이 없으면 null. */
 	@JdbcTypeCode(SqlTypes.JSON)
 	@Column(name = "after_content")
 	private HandoverDraftContent after;
 
-	@Column(name = "change_summary", columnDefinition = "TEXT")
-	private String changeSummary;
-
 	@JdbcTypeCode(SqlTypes.JSON)
 	@Column(nullable = false)
 	private List<FixQuestion> questions;
-
-	@JdbcTypeCode(SqlTypes.JSON)
-	@Column(nullable = false)
-	private List<ReadinessEvidence> evidence;
 
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private Instant createdAt;
@@ -96,48 +93,64 @@ public class ReadinessFix {
 	@Column(name = "updated_at", nullable = false)
 	private Instant updatedAt;
 
-	private ReadinessFix(UUID handoverId, UUID evaluationId, ReadinessArea area, DraftSection section,
+	private ReadinessFix(UUID handoverId, UUID evaluationId, List<ReadinessItem> items, List<FixQuestion> questions,
 			long baseRevision, HandoverDraftContent currentContent) {
 		this.handoverId = handoverId;
 		this.evaluationId = evaluationId;
-		this.area = area;
-		this.section = section;
+		this.areaResults = items.stream().map(FixAreaResult::open).toList();
+		this.sections = areaResults.stream()
+				.flatMap(result -> result.sections().stream())
+				.distinct()
+				.toList();
 		this.baseRevision = baseRevision;
-		this.before = section.only(currentContent);
+		this.before = DraftSection.extract(currentContent, sections);
 		this.status = ReadinessFixStatus.NEEDS_INPUT;
 		this.questions = new ArrayList<>();
-		this.evidence = List.of();
+		addQuestions(questions);
 	}
 
-	public static ReadinessFix open(UUID handoverId, UUID evaluationId, ReadinessArea area, DraftSection section,
-			long baseRevision, HandoverDraftContent currentContent) {
-		return new ReadinessFix(handoverId, evaluationId, area, section, baseRevision, currentContent);
+	/** 보완을 시작한다. items는 보완할 영역의 평가 결과, questions는 처음에 물을 질문(id는 여기서 붙인다). */
+	public static ReadinessFix open(UUID handoverId, UUID evaluationId, List<ReadinessItem> items,
+			List<FixQuestion> questions, long baseRevision, HandoverDraftContent currentContent) {
+		return new ReadinessFix(handoverId, evaluationId, items, questions, baseRevision, currentContent);
 	}
 
-	/** 자료(또는 답변)에서 찾은 사실로 만든 수정안을 붙인다. 대상 섹션 밖의 값은 버린다. */
-	public void propose(HandoverDraftContent patch, String changeSummary, List<ReadinessEvidence> evidence) {
+	/**
+	 * 보완안 만들기 결과를 반영한다. 수정안이 있는 영역이 하나라도 있으면 PROPOSED, 없으면 NEEDS_INPUT.
+	 * newQuestions는 아직 부족한 영역에 새로 물을 질문(이미 답한 질문은 유지된다).
+	 */
+	public void recordGeneration(List<FixAreaResult> results, HandoverDraftContent after, List<FixQuestion> newQuestions) {
 		requireOpen();
-		this.after = section.only(patch);
-		this.changeSummary = changeSummary;
-		this.evidence = List.copyOf(evidence);
-		this.status = ReadinessFixStatus.PROPOSED;
+		this.areaResults = List.copyOf(results);
+		addQuestions(newQuestions);
+		boolean anyProposed = results.stream().anyMatch(FixAreaResult::proposed);
+		this.after = anyProposed ? DraftSection.extract(after, sections) : null;
+		this.status = anyProposed ? ReadinessFixStatus.PROPOSED : ReadinessFixStatus.NEEDS_INPUT;
 	}
 
-	/** 자료에 답이 없어 추가 질문을 붙인다. 이미 답한 질문은 유지하고, 새 질문은 이어지는 id로 추가한다. */
-	public void askMore(List<FixQuestion> newQuestions) {
-		requireOpen();
+	/** 수정안이 있는 영역이 고치는 섹션. 적용할 때 이 섹션만 문서에 반영한다. */
+	public List<DraftSection> proposedSections() {
+		return areaResults.stream()
+				.filter(FixAreaResult::proposed)
+				.flatMap(result -> result.sections().stream())
+				.distinct()
+				.toList();
+	}
+
+	public Optional<FixAreaResult> areaResult(ReadinessArea area) {
+		return areaResults.stream().filter(result -> result.area() == area).findFirst();
+	}
+
+	private void addQuestions(List<FixQuestion> newQuestions) {
 		List<FixQuestion> merged = new ArrayList<>(questions);
 		int next = questions.size() + 1;
 		for (FixQuestion question : newQuestions) {
-			merged.add(new FixQuestion("q" + next++, question.question(), question.reason(), null));
+			merged.add(question.withId("q" + next++));
 		}
 		this.questions = merged;
-		this.after = null;
-		this.changeSummary = null;
-		this.status = ReadinessFixStatus.NEEDS_INPUT;
 	}
 
-	/** 추가 질문에 답한다. 모르는 질문 id는 400. */
+	/** 질문에 답한다(답만 저장하고 AI는 부르지 않는다). 모르는 질문 id는 400. */
 	public void answer(String questionId, String answer) {
 		requireOpen();
 		List<FixQuestion> updated = new ArrayList<>(questions.size());
@@ -151,7 +164,7 @@ public class ReadinessFix {
 			}
 		}
 		if (!found) {
-			throw new BusinessException(ErrorCode.BAD_REQUEST, "존재하지 않는 추가 질문입니다: " + questionId);
+			throw new BusinessException(ErrorCode.BAD_REQUEST, "존재하지 않는 보완 질문입니다: " + questionId);
 		}
 		this.questions = updated;
 	}

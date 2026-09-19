@@ -35,9 +35,17 @@ public final class ReadinessRubrics {
 			50,
 			3);
 
-	public static final ReadinessRubric CURRENT = V1;
+	/**
+	 * v2: 점수 계산(확인 내용·배점·상태 비율·등급 경계)은 v1과 같다. 평가 방식만 바뀌었다 —
+	 * 확인된 업무 기준에 사람이 확정한 값이 있으면 자료끼리 달라도 충돌로 보지 않고,
+	 * 영역마다 고칠 섹션(해결 방법과 같은 곳)과 인계자에게 물을 질문을 함께 낸다.
+	 */
+	public static final ReadinessRubric V2 = new ReadinessRubric(
+			"v2", V1.criteria(), V1.weights(), V1.statusPercent(), V1.readyScore(), V1.minimumScore(), V1.keyIssueCount());
 
-	private static final Map<String, ReadinessRubric> BY_VERSION = Map.of(V1.version(), V1);
+	public static final ReadinessRubric CURRENT = V2;
+
+	private static final Map<String, ReadinessRubric> BY_VERSION = Map.of(V1.version(), V1, V2.version(), V2);
 
 	private ReadinessRubrics() {
 	}

@@ -18,7 +18,6 @@ import com.baton.readiness.ReadinessStatus;
 /**
  * 인수인계 준비도.
  *
- * @param potentialScore 중요한 확인(keyIssueCount개)을 모두 해결했을 때의 예상 점수.
  * @param stale          평가 이후 문서나 업로드 자료가 바뀌었으면 true — POST /readiness/evaluate로 다시 평가한다.
  * @param draftRevision  평가한 문서 버전.
  * @param areas          잃은 점수가 큰 영역부터 정렬.
@@ -28,7 +27,6 @@ public record ReadinessResponse(
 		UUID evaluationId,
 		String rubricVersion,
 		int score,
-		int potentialScore,
 		ReadinessGrade grade,
 		String gradeLabel,
 		int keyIssueCount,
@@ -59,7 +57,6 @@ public record ReadinessResponse(
 				evaluation.getId(),
 				evaluation.getRubricVersion(),
 				evaluation.getScore(),
-				rubric.potentialScore(statuses),
 				grade,
 				grade.getLabel(),
 				keyIssues.size(),

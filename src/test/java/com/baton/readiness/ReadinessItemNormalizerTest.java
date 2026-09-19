@@ -14,6 +14,7 @@ import com.baton.readiness.ReadinessItemNormalizer.SourceRef;
 import com.baton.readiness.dto.GeneratedAreaAssessment;
 import com.baton.readiness.dto.GeneratedAssessment;
 import com.baton.readiness.dto.GeneratedEvidence;
+import com.baton.readiness.dto.GeneratedItemQuestion;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 class ReadinessItemNormalizerTest {
@@ -68,18 +69,20 @@ class ReadinessItemNormalizerTest {
 	@Test
 	void keepsValidAiResultAndDropsInvalidParts() {
 		GeneratedAreaAssessment generated = new GeneratedAreaAssessment(
-				ReadinessArea.EXCEPTION, ReadinessStatus.MISSING, DraftSection.STAKEHOLDERS,
+				ReadinessArea.EXCEPTION, ReadinessStatus.MISSING, List.of(DraftSection.STAKEHOLDERS),
 				"환불 오류 발생 시의 세부 처리 절차와 담당자가 명확하지 않다.",
 				"환불 오류 대응 담당자가 명확하지 않아요", "환불 오류 처리 절차와 담당자를 확인하세요",
 				List.of(new GeneratedEvidence("프로모션 운영 체크리스트.xlsx", "3번 시트, 예외 상황"),
 						new GeneratedEvidence("프로모션 운영 체크리스트.xlsx", "3번 시트, 예외 상황"),
-						new GeneratedEvidence("없는 파일.pdf", "1쪽")));
+						new GeneratedEvidence("없는 파일.pdf", "1쪽")),
+				List.of());
 
 		ReadinessItem exception = find(normalizer.normalize(new GeneratedAssessment(List.of(generated)), CONTENT, SOURCES),
 				ReadinessArea.EXCEPTION);
 
 		assertThat(exception.status()).isEqualTo(ReadinessStatus.MISSING);
 		assertThat(exception.section()).isEqualTo(DraftSection.RULES_AND_EXCEPTIONS);
+		assertThat(exception.targetSections()).containsExactly(DraftSection.RULES_AND_EXCEPTIONS);
 		assertThat(exception.anchorText()).isEqualTo("환불 오류 발생 시의 세부 처리 절차와 담당자가 명확하지 않다.");
 		assertThat(exception.summary()).isEqualTo("환불 오류 대응 담당자가 명확하지 않아요");
 		assertThat(exception.evidence()).containsExactly(
@@ -99,9 +102,73 @@ class ReadinessItemNormalizerTest {
 				.isEqualTo("월요일 오전 설정");
 	}
 
+	@Test
+	void targetSectionsFollowResolutionWithinArea() {
+		GeneratedAreaAssessment generated = new GeneratedAreaAssessment(ReadinessArea.PROCEDURE, ReadinessStatus.PARTIAL,
+				List.of(DraftSection.RECURRING_TASKS, DraftSection.STAKEHOLDERS, DraftSection.FIRST_WEEK_CHECKLIST,
+						DraftSection.ONGOING_TASKS),
+				"", "순서가 부족해요", "반복 업무에 단계별 절차를 적어주세요", List.of(), List.of());
+
+		ReadinessItem procedure = find(normalizer.normalize(new GeneratedAssessment(List.of(generated)), CONTENT, SOURCES),
+				ReadinessArea.PROCEDURE);
+
+		// 영역 밖 섹션(주요 관계자)은 버리고 최대 2개, 순서 유지. "문서에서 수정하기" 위치는 첫 번째.
+		assertThat(procedure.targetSections())
+				.containsExactly(DraftSection.RECURRING_TASKS, DraftSection.FIRST_WEEK_CHECKLIST);
+		assertThat(procedure.section()).isEqualTo(DraftSection.RECURRING_TASKS);
+	}
+
+	@Test
+	void conflictAlwaysTargetsConfirmedCriteriaAndAsksWhichIsRight() {
+		GeneratedAreaAssessment generated = new GeneratedAreaAssessment(ReadinessArea.EXCEPTION, ReadinessStatus.CONFLICT,
+				List.of(DraftSection.RULES_AND_EXCEPTIONS), "", "자료 간 환불 기준이 달라요", "기준을 확정해 주세요",
+				List.of(), List.of());
+
+		ReadinessItem exception = find(normalizer.normalize(new GeneratedAssessment(List.of(generated)), CONTENT, SOURCES),
+				ReadinessArea.EXCEPTION);
+
+		assertThat(exception.targetSections())
+				.containsExactly(DraftSection.RULES_AND_EXCEPTIONS, DraftSection.CONFIRMED_CRITERIA);
+		assertThat(exception.questions()).singleElement()
+				.satisfies(question -> assertThat(question.question()).contains("어느 쪽이 맞나요"));
+	}
+
+	@Test
+	void keepsAtMostThreeUniqueQuestionsAndNoneWhenSufficient() {
+		List<GeneratedItemQuestion> questions = List.of(
+				new GeneratedItemQuestion("승인자는 누구인가요?", "자료에 없어요", List.of("A.pdf: 팀장", "A.pdf: 팀장", " ")),
+				new GeneratedItemQuestion("승인자는 누구인가요?", "중복", List.of()),
+				new GeneratedItemQuestion(" ", "빈 질문", List.of()),
+				new GeneratedItemQuestion("기한은 언제인가요?", null, null),
+				new GeneratedItemQuestion("보고 대상은 누구인가요?", null, null),
+				new GeneratedItemQuestion("네 번째 질문인가요?", null, null));
+
+		List<ItemQuestion> partial = ReadinessItemNormalizer.questions(ReadinessArea.CONTACTS, ReadinessStatus.PARTIAL, questions);
+
+		assertThat(partial).extracting(ItemQuestion::question)
+				.containsExactly("승인자는 누구인가요?", "기한은 언제인가요?", "보고 대상은 누구인가요?");
+		assertThat(partial.get(0).options()).containsExactly("A.pdf: 팀장");
+		assertThat(ReadinessItemNormalizer.questions(ReadinessArea.CONTACTS, ReadinessStatus.SUFFICIENT, questions)).isEmpty();
+	}
+
+	@Test
+	void replacesCodeNamesInUserFacingText() {
+		GeneratedAreaAssessment generated = new GeneratedAreaAssessment(ReadinessArea.EXCEPTION, ReadinessStatus.PARTIAL,
+				List.of(DraftSection.RULES_AND_EXCEPTIONS), "", "RULES_AND_EXCEPTIONS에 절차가 부족해요",
+				"확정한 기준을 CONFIRMED_CRITERIA에 적고 recurringTasks도 고치세요", List.of(),
+				List.of(new GeneratedItemQuestion("rulesAndExceptions에 적을 담당자는?", null, List.of())));
+
+		ReadinessItem exception = find(normalizer.normalize(new GeneratedAssessment(List.of(generated)), CONTENT, SOURCES),
+				ReadinessArea.EXCEPTION);
+
+		assertThat(exception.summary()).isEqualTo("업무 기준과 예외에 절차가 부족해요");
+		assertThat(exception.resolution()).isEqualTo("확정한 기준을 확인된 업무 기준에 적고 반복 업무도 고치세요");
+		assertThat(exception.questions().get(0).question()).isEqualTo("업무 기준과 예외에 적을 담당자는?");
+	}
+
 	private static GeneratedAreaAssessment assessment(ReadinessArea area, ReadinessStatus status, DraftSection section,
 			String anchor, String summary) {
-		return new GeneratedAreaAssessment(area, status, section, anchor, summary, "확인하세요", List.of());
+		return new GeneratedAreaAssessment(area, status, List.of(section), anchor, summary, "확인하세요", List.of(), List.of());
 	}
 
 	private static ReadinessItem find(List<ReadinessItem> items, ReadinessArea area) {

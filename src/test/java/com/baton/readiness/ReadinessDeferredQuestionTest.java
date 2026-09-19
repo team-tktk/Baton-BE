@@ -45,7 +45,8 @@ class ReadinessDeferredQuestionTest {
 	@Test
 	void deferredQuestionsAreShownWithoutChangingScore() {
 		ReadinessEvaluation evaluation = ReadinessEvaluation.create(handoverId, rubric, "hash", 1, Arrays.stream(ReadinessArea.values())
-				.map(area -> new ReadinessItem(area, ReadinessStatus.SUFFICIENT, area.primarySection(), null, "충분", null, List.of()))
+				.map(area -> new ReadinessItem(area, ReadinessStatus.SUFFICIENT, area.primarySection(), null, "충분", null, List.of(),
+						List.of(area.primarySection()), List.of()))
 				.toList());
 		ClarificationQuestion deferred = question(List.of(DraftSection.STAKEHOLDERS));
 

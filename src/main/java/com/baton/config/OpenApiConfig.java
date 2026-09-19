@@ -63,7 +63,7 @@ public class OpenApiConfig {
 			  SCHEDULE(일정)·CONTACTS(담당자)·ACCESS(접근 권한)·EVIDENCE(근거와 최신성)
 			- **ReadinessStatus**(영역 평가): SUFFICIENT(충분)·PARTIAL(일부 부족)·MISSING(누락)·CONFLICT(충돌)
 			- **ReadinessGrade**(전체 등급): READY(준비 완료)·NEEDS_IMPROVEMENT(보완 필요)·NOT_READY(준비 부족)
-			- **ReadinessFixStatus**(보완안): NEEDS_INPUT(추가 질문 답변 대기)·PROPOSED(수정안 확인 대기)·APPLIED(적용됨)·DISCARDED(취소됨)
+			- **ReadinessFixStatus**(보완안): NEEDS_INPUT(수정안 없음 — 질문 답변 후 보완안 만들기 대기)·PROPOSED(수정안이 있는 영역이 하나 이상, 확인 대기)·APPLIED(적용됨)·DISCARDED(취소됨)
 			- **DraftSection**(문서 영역): PURPOSE·COMPLETION_CRITERIA·ONGOING_TASKS·RECURRING_TASKS·RULES_AND_EXCEPTIONS·
 			  STAKEHOLDERS·TOOLS·SCHEDULE·ACCESS_ACCOUNTS·FIRST_WEEK_CHECKLIST·CONFIRMED_CRITERIA
 
