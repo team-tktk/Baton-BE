@@ -501,9 +501,12 @@ public class RagController {
 
 	@Operation(summary = "AI 확인 질문 목록 조회",
 			description = """
-					AI가 초안 보완을 위해 만든 확인 질문(질문·설명·선택지·근거)을 반환한다. 인계자만 가능.
+					AI가 초안 보완을 위해 만든 확인 질문(질문·이유·선택지·근거·반영 위치)을 중요도순으로 반환한다. 인계자만 가능.
 					type=INTERVIEW(추가 정보 인터뷰) 또는 type=CONFLICT(문서 간 충돌 해소)로 필터할 수 있다.
-					각 항목의 status: PENDING(미응답)·ANSWERED(답변)·SKIPPED(건너뜀).
+					- 한 번의 분석에서 새로 만드는 질문은 **최대 5개**다. 자료에 답이 있는 질문·이미 물어본 질문과 같은 뜻의 질문은 만들지 않는다.
+					- reason: 질문 이유. targetSections: 답변이 반영될 문서 위치(section·field=문서 JSON 필드명·label=섹션 이름).
+					- priority: 중요도 순위(1이 가장 중요). applied: 현재 상태가 문서에 반영됐는지.
+					- status: PENDING(미응답)·ANSWERED(답변)·UNKNOWN(모름)·NOT_APPLICABLE(해당 없음)·DEFERRED(나중에 답하기).
 					**질문이 0개면 빈 배열**을 반환한다 — 이땐 답변 단계를 건너뛰고 바로 GET /document로 초안을 조회하면 된다.
 					""")
 	@GetMapping("/questions")
@@ -518,14 +521,17 @@ public class RagController {
 		return ragAnalysisService.getQuestions(handoverId, type);
 	}
 
-	@Operation(summary = "AI 확인 질문에 답변",
+	@Operation(summary = "AI 확인 질문 처리(답변·모름·해당 없음·나중에 답하기)",
 			description = """
-					선택지 선택 또는 직접 입력으로 답변을 저장/수정하거나 건너뛴다. 인계자만 가능. 답변하면 status=ANSWERED, 건너뛰면 SKIPPED.
+					질문 하나의 처리 상태를 저장/수정한다. 인계자만 가능. 문서는 바로 바뀌지 않는다 — 완료 처리 또는 POST /questions/apply 때 반영된다.
+					상태를 바꾸거나 답변을 고치면 applied=false로 돌아가 다시 반영 대상이 된다.
 
-					요청 규칙(validCombination 검증):
-					- **답변**: skipped=false + answer에 내용(공백만은 불가).
-					- **건너뛰기**: skipped=true만 보내면 된다. answer는 보내지 않거나 null. **빈 문자열("")도 보내지 말 것** — 건너뛸 때 answer가 있으면 검증 실패.
-					- 규칙 위반(둘 다 없음/둘 다 있음): 400(code=AI_QUESTION_ANSWER_INVALID 또는 검증 VALIDATION_FAILED).
+					status별 의미와 규칙(validCombination 검증):
+					- ANSWERED: 답변. answer 필수(공백만은 불가). 문서에 확정 내용으로 반영된다.
+					- UNKNOWN: 인계자도 모름. answer 없이. 값을 추측해 채우지 않고, 첫 주 체크리스트에 "확인 필요" 항목으로 남긴다.
+					- NOT_APPLICABLE: 이 업무엔 해당 없음. answer 없이. 해당 항목을 문서에 만들지 않는다.
+					- DEFERRED: 나중에 답하기. answer 없이. 완료 처리를 막지 않는다. 인수인계 준비도(GET /readiness의 deferredQuestions)에 표시되고(점수에는 영향 없음), 나중에 답한 뒤 POST /questions/apply로 반영한다.
+					- PENDING으로 되돌리기, 규칙 위반: 400(code=VALIDATION_FAILED)
 					- 없는 질문: 404(code=AI_QUESTION_NOT_FOUND)
 					""",
 			requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(content = @Content(
@@ -533,10 +539,16 @@ public class RagController {
 					schema = @Schema(implementation = QuestionAnswerRequest.class),
 					examples = {
 						@ExampleObject(name = "답변", value = """
-								{ "answer": "마케팅 확인 후 팀장 승인", "skipped": false }
+								{ "status": "ANSWERED", "answer": "마케팅 확인 후 팀장 승인" }
 								"""),
-						@ExampleObject(name = "건너뛰기", value = """
-								{ "answer": null, "skipped": true }
+						@ExampleObject(name = "모름", value = """
+								{ "status": "UNKNOWN" }
+								"""),
+						@ExampleObject(name = "해당 없음", value = """
+								{ "status": "NOT_APPLICABLE" }
+								"""),
+						@ExampleObject(name = "나중에 답하기", value = """
+								{ "status": "DEFERRED" }
 								""")
 					})))
 	@PutMapping("/questions/{questionId}/answer")
@@ -553,13 +565,14 @@ public class RagController {
 
 	@Operation(summary = "확인 질문 완료 처리",
 			description = """
-					답변(및 건너뛴 항목)을 반영해 초안을 다시 생성하고 최신 문서를 반환한다(본 상태 → EDITING). 인계자만 가능.
+					질문 처리 결과를 문서에 반영하고 최신 문서를 반환한다(본 상태 → EDITING). 인계자만 가능.
+					- 문서가 아직 없으면(첫 완료): 자료 + 처리 결과로 문서 전체를 생성한다.
+					- 문서가 이미 있으면(재분석 후 완료): 아직 반영되지 않은 질문의 targetSections만 갱신하고, 나머지 섹션(사람이 고친 내용 포함)은 그대로 둔다.
 
-					**모든 질문에 답할 필요는 없다** — 답하지 않을 질문은 건너뛰기(SKIPPED)만 해두면 된다. 즉 PENDING이 하나도 없으면 호출 가능.
-					답변이 하나도 없고 전부 건너뛰었거나 **질문이 0개면** 초안 재생성 없이 그대로 완료 처리한다.
-					- 확인 질문 단계(ANSWERING)가 아님(이미 초안을 만든 뒤 다시 호출 등): 409(code=HANDOVER_INVALID_STATE)
-					  → 인수인계서를 다시 만들려면 POST /analysis로 분석부터 다시 시작한다.
-					- 아직 PENDING(답변·건너뛰기 안 한) 질문이 남아 있음: 409(code=AI_QUESTIONS_INCOMPLETE)
+					PENDING이 하나도 없으면 호출 가능하다. DEFERRED(나중에 답하기)는 완료를 막지 않는다.
+					- 확인 질문 단계(ANSWERING)가 아님(이미 완료한 뒤 다시 호출 등): 409(code=HANDOVER_INVALID_STATE)
+					  → 완료 뒤 답한 질문은 POST /questions/apply로 반영한다.
+					- 아직 PENDING 질문이 남아 있음: 409(code=AI_QUESTIONS_INCOMPLETE)
 					- 같은 인수인계의 인수인계서 생성이 이미 진행 중(중복 클릭 등): 409(code=AI_TASK_ALREADY_RUNNING)
 					- AI 요청 한도 초과(인수인계서 생성·보완안 생성·채팅 합산): 429(code=AI_USAGE_LIMIT_EXCEEDED)
 					""")
@@ -570,6 +583,25 @@ public class RagController {
 
 		return aiTaskLockService.runExclusive(AiTask.DRAFT_GENERATION, handoverId, () ->
 				ragAnalysisService.completeQuestions(handoverId,
+						() -> aiUsageGuard.acquire(userId, AiFeature.DRAFT_GENERATION, handoverId)));
+	}
+
+	@Operation(summary = "확인 질문 처리 결과를 문서에 반영",
+			description = """
+					문서가 만들어진 뒤 처리한 질문(예: 나중에 답하기였다가 답한 질문)을 문서에 반영하고 최신 문서를 반환한다. 인계자만 가능.
+					문서 전체를 다시 만들지 않고, applied=false인 질문(ANSWERED·UNKNOWN·NOT_APPLICABLE)의 targetSections만 갱신한다.
+					반영할 질문이 없으면 AI 호출 없이 현재 문서를 그대로 반환한다(사용량도 차감하지 않는다).
+					- 아직 문서가 없음: 404(code=AI_DRAFT_NOT_FOUND) — 이땐 POST /questions/complete로 문서를 먼저 만든다.
+					- 같은 인수인계의 인수인계서 생성이 이미 진행 중(중복 클릭 등): 409(code=AI_TASK_ALREADY_RUNNING)
+					- AI 요청 한도 초과(인수인계서 생성·보완안 생성·채팅 합산): 429(code=AI_USAGE_LIMIT_EXCEEDED)
+					""")
+	@PostMapping("/questions/apply")
+	@Transactional(propagation = Propagation.NOT_SUPPORTED) // AI 응답을 기다리는 동안 커넥션을 쥐지 않게
+	public HandoverDraftResponse applyAnswers(@PathVariable UUID handoverId, Authentication authentication) {
+		UUID userId = handoverAccess.requireOwner(handoverId, authentication);
+
+		return aiTaskLockService.runExclusive(AiTask.DRAFT_GENERATION, handoverId, () ->
+				ragAnalysisService.applyAnswers(handoverId,
 						() -> aiUsageGuard.acquire(userId, AiFeature.DRAFT_GENERATION, handoverId)));
 	}
 

@@ -2,12 +2,13 @@ package com.baton.ai;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import com.baton.ai.dto.HandoverDraftContent;
 
 /**
- * 인수인계 문서(HandoverDraftContent)의 섹션. 준비도 평가의 부족 항목이 가리키는 문서 위치이고,
- * 보완안을 적용할 때 문서 전체가 아니라 이 섹션 하나만 바꾸는 단위다.
+ * 인수인계 문서(HandoverDraftContent)의 섹션. 준비도 평가의 부족 항목·확인 질문의 답변이 가리키는 문서 위치이고,
+ * 보완안 적용·답변 반영 때 문서 전체가 아니라 해당 섹션만 바꾸는 단위다.
  */
 public enum DraftSection {
 	PURPOSE("purpose", "업무 개요"),
@@ -97,6 +98,28 @@ public enum DraftSection {
 	/** content에서 이 섹션만 남긴 content(나머지는 null). 수정 전후 스냅샷 저장용. */
 	public HandoverDraftContent only(HandoverDraftContent content) {
 		return merge(EMPTY, content);
+	}
+
+	/** base에서 sections에 해당하는 섹션만 patch 값으로 바꾼 새 content. 나머지 섹션(사람이 고친 내용 포함)은 그대로 둔다. */
+	public static HandoverDraftContent merge(HandoverDraftContent base, HandoverDraftContent patch,
+			Collection<DraftSection> sections) {
+		HandoverDraftContent merged = base;
+		for (DraftSection section : sections) {
+			merged = section.merge(merged, patch);
+		}
+		return merged;
+	}
+
+	/** content에서 sections에 해당하는 섹션만 남긴 content(나머지는 null). 부분 갱신 프롬프트에 현재 값만 넘길 때 쓴다. */
+	public static HandoverDraftContent extract(HandoverDraftContent content, Collection<DraftSection> sections) {
+		return merge(EMPTY, content, sections);
+	}
+
+	/** 프롬프트에 넣을 섹션 목록 문자열. 예: "업무 개요(purpose), 반복 업무(recurringTasks)" */
+	public static String describe(Collection<DraftSection> sections) {
+		return sections.stream()
+				.map(section -> section.label + "(" + section.fieldName + ")")
+				.collect(Collectors.joining(", "));
 	}
 
 	private static <T> List<T> orEmpty(List<T> items) {

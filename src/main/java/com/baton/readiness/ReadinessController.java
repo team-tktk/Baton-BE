@@ -63,6 +63,7 @@ public class ReadinessController {
 					| keyIssueCount | 중요한 확인 항목 수(최대 3) |
 					| stale | true면 평가 이후 문서나 업로드 자료가 바뀐 것 → 다시 평가 필요 |
 					| areas | 영역별 평가. 잃은 점수가 큰 영역부터 정렬 |
+					| deferredQuestionCount | 확인 질문 단계에서 "나중에 답하기"로 미룬 질문 수(전 영역 합계) |
 
 					**areas 항목**
 
@@ -74,6 +75,13 @@ public class ReadinessController {
 					| evidence | 근거 파일. sourceId로 원문 열기 |
 					| section | 부족한 내용이 들어갈 문서 섹션("문서에서 수정하기" 이동 위치) |
 					| anchorText | 문서에서 강조할 문장. 없으면 null |
+					| deferredQuestions | 이 영역에 붙은 "나중에 답하기" 질문(중요도순). 없으면 빈 배열 |
+
+					**나중에 답하기 질문(deferredQuestions)**
+					- 표시만 한다. 점수·상태·중요한 확인 개수에는 영향이 없다.
+					- 영역은 질문의 첫 번째 반영 위치(targetSections)가 속한 영역이다.
+					- 평가 결과와 달리 매번 현재 상태로 읽는다. 답하면 바로 목록에서 빠진다(다시 평가할 필요 없음).
+					- 답하기(인계자만): PUT /questions/{questionId}/answer 로 처리한 뒤 POST /questions/apply 로 문서에 반영한다.
 
 					**점수 계산(서버)**
 					영역 점수 = 배점 × 상태 비율(충분 100%, 일부 부족 50%, 충돌 25%, 누락 0%), 총점 = 영역 점수의 합(반올림).
@@ -108,16 +116,27 @@ public class ReadinessController {
 								      "anchorText": "환불 오류 발생 시의 세부 처리 절차와 담당자가 명확하지 않다.",
 								      "summary": "환불 오류 대응 담당자가 명확하지 않아요",
 								      "resolution": "환불 오류 발생 시 처리 절차와 담당자를 확인해 문서에 적어주세요",
-								      "evidence": [ { "sourceId": "a1b2c3d4-...", "fileName": "프로모션 운영 체크리스트.xlsx", "locator": "3번 시트, 예외 상황" } ]
+								      "evidence": [ { "sourceId": "a1b2c3d4-...", "fileName": "프로모션 운영 체크리스트.xlsx", "locator": "3번 시트, 예외 상황" } ],
+								      "deferredQuestions": [
+								        {
+								          "id": "5e6f7a8b-...", "type": "INTERVIEW",
+								          "questionText": "환불 오류 발생 시 최종 처리 담당자는 누구인가요?",
+								          "reason": "모르면 환불 문의가 방치돼요",
+								          "area": "EXCEPTION",
+								          "targetSections": [ { "section": "RULES_AND_EXCEPTIONS", "field": "rulesAndExceptions", "label": "업무 기준과 예외" } ]
+								        }
+								      ]
 								    },
 								    {
 								      "area": "COMPLETION", "label": "완료 기준",
 								      "criteria": "업무가 끝났다고 판단할 수 있는가 (완료·인수 완료를 판단하는 기준)",
 								      "weight": 10, "status": "SUFFICIENT", "statusLabel": "충분", "percent": 100, "keyIssue": false,
 								      "section": "COMPLETION_CRITERIA", "sectionLabel": "완료 기준",
-								      "anchorText": null, "summary": "완료 기준이 구체적으로 적혀 있어요", "resolution": null, "evidence": []
+								      "anchorText": null, "summary": "완료 기준이 구체적으로 적혀 있어요", "resolution": null, "evidence": [],
+								      "deferredQuestions": []
 								    }
-								  ]
+								  ],
+								  "deferredQuestionCount": 1
 								}
 								""")
 					})))

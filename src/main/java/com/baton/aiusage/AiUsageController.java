@@ -31,7 +31,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 
-@Tag(name = "07. AI 사용량",
+@Tag(name = "08. AI 사용량",
 		description = "인수인계서 생성·보완안 생성·채팅을 합산한 분/시간/하루 요청 한도(비정상 연속 호출 차단용)와, 같은 인수인계 AI 작업의 중복 실행을 관리한다. "
 				+ "한도를 넘으면 해당 AI API가 429(code=AI_USAGE_LIMIT_EXCEEDED)와 Retry-After 헤더, retryAt·retryAfterSeconds를 준다. "
 				+ "같은 인수인계에서 같은 AI 작업이 이미 실행 중이면 409(code=AI_TASK_ALREADY_RUNNING).")

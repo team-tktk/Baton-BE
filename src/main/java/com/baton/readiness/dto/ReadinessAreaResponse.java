@@ -16,6 +16,7 @@ import com.baton.readiness.ReadinessStatus;
  * @param weight   이 영역의 배점(총점 100 중).
  * @param keyIssue "중요한 확인"에 들어가는 항목인지.
  * @param section  부족한 내용이 들어갈 문서 섹션. 보완안 적용 위치이자 "문서에서 수정하기" 이동 위치.
+ * @param deferredQuestions 이 영역에 붙은 "나중에 답하기" 질문. 표시용이고 점수·상태에는 영향이 없다.
  */
 public record ReadinessAreaResponse(
 		ReadinessArea area,
@@ -31,9 +32,11 @@ public record ReadinessAreaResponse(
 		String anchorText,
 		String summary,
 		String resolution,
-		List<ReadinessEvidence> evidence) {
+		List<ReadinessEvidence> evidence,
+		List<DeferredQuestionResponse> deferredQuestions) {
 
-	public static ReadinessAreaResponse of(ReadinessItem item, ReadinessRubric rubric, boolean keyIssue) {
+	public static ReadinessAreaResponse of(ReadinessItem item, ReadinessRubric rubric, boolean keyIssue,
+			List<DeferredQuestionResponse> deferredQuestions) {
 		return new ReadinessAreaResponse(
 				item.area(),
 				item.area().getLabel(),
@@ -48,6 +51,7 @@ public record ReadinessAreaResponse(
 				item.anchorText(),
 				item.summary(),
 				item.resolution(),
-				item.evidence() == null ? List.of() : item.evidence());
+				item.evidence() == null ? List.of() : item.evidence(),
+				deferredQuestions);
 	}
 }

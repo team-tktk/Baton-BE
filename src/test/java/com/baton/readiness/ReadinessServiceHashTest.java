@@ -11,7 +11,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 class ReadinessServiceHashTest {
 
-	private final ReadinessService service = new ReadinessService(null, null, null, null, null, new ObjectMapper(), null);
+	private final ReadinessService service = new ReadinessService(null, null, null, null, null, new ObjectMapper(), null, null);
 
 	private static HandoverDraftContent content(String purpose) {
 		return new HandoverDraftContent(purpose, "완료", List.of(), List.of(), List.of("규칙"),

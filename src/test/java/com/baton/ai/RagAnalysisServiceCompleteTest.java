@@ -79,7 +79,8 @@ class RagAnalysisServiceCompleteTest {
 		handover.markAnalysisStarted();
 		handover.markAnalysisCompleted(true); // ANSWERING
 		when(clarificationQuestionRepository.findAllByHandoverId(handoverId)).thenReturn(List.of(
-				ClarificationQuestion.create(handoverId, ClarificationQuestionType.INTERVIEW, "질문", "이유", null, List.of())));
+				ClarificationQuestion.create(handoverId, ClarificationQuestionType.INTERVIEW, "질문", "이유", null, List.of(),
+						List.of(DraftSection.RULES_AND_EXCEPTIONS), 1)));
 
 		assertThatThrownBy(() -> service.completeQuestions(handoverId, charged::incrementAndGet))
 				.isInstanceOfSatisfying(BusinessException.class,

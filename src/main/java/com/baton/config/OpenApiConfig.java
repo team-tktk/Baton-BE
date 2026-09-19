@@ -57,7 +57,7 @@ public class OpenApiConfig {
 			- **SourceDocumentStatus**(첨부 파일 처리): EXTRACTING(추출·임베딩 진행 중)·MASKING_REVIEW(마스킹 검수 대기)·INDEXING(검수 확정 후 임베딩 중)·INDEXED(완료)·FAILED(실패 → 재처리 가능)
 			- **MaskingType**(마스킹 유형): EMAIL·PHONE·ACCOUNT·RRN(주민등록번호)·CARD·BUSINESS_NO(사업자등록번호)·CUSTOM(직접 지정)
 			- **MaskingOrigin**(마스킹 항목 출처): DETECTED(자동 탐지)·MANUAL(직접 추가)
-			- **ClarificationQuestionStatus**(확인 질문): PENDING(미응답)·ANSWERED(답변)·SKIPPED(건너뜀)
+			- **ClarificationQuestionStatus**(확인 질문): PENDING(미응답)·ANSWERED(답변)·UNKNOWN(모름)·NOT_APPLICABLE(해당 없음)·DEFERRED(나중에 답하기)
 			- **ClarificationQuestionType**: INTERVIEW(추가 정보 인터뷰)·CONFLICT(문서 간 충돌 해소)
 			- **ReadinessArea**(준비도 평가 영역): SCOPE(업무 범위)·PROCEDURE(실행 절차)·COMPLETION(완료 기준)·EXCEPTION(예외 대응)·
 			  SCHEDULE(일정)·CONTACTS(담당자)·ACCESS(접근 권한)·EVIDENCE(근거와 최신성)

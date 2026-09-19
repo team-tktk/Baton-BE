@@ -4,9 +4,13 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
@@ -52,7 +56,7 @@ import lombok.extern.slf4j.Slf4j;
 
 /**
  * 업로드된 문서를 근거로 구조화된 인수인계 초안과, 자료만으로 판단 안 되는 부분에 대한
- * 확인 질문을 생성한다. 질문에 답이 달리면 그 내용을 반영해 초안을 다시 만든다.
+ * 확인 질문을 생성한다. 초안은 처음 한 번 전체를 만들고, 이후 질문 처리 결과는 관련 섹션에만 반영한다.
  */
 @Service
 @RequiredArgsConstructor
@@ -75,32 +79,45 @@ public class RagAnalysisService {
 	@Value("${app.ai.analysis-model:gpt-5.4}")
 	private String analysisModel;
 
+	private static final Comparator<ClarificationQuestion> QUESTION_ORDER = Comparator
+			.comparing((ClarificationQuestion q) -> q.getPriority() == null ? Integer.MAX_VALUE : q.getPriority())
+			.thenComparing(ClarificationQuestion::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder()));
+
 	private static final DateTimeFormatter UPDATED_FMT =
 			DateTimeFormatter.ofPattern("yyyy. MM. dd. HH:mm", Locale.KOREA).withZone(ZoneId.of("Asia/Seoul"));
 
 	/**
 	 * 분석 단계 = "확인 질문"만 빠르게 생성한다(출력이 작아 빠름). 무거운 초안 생성은 답변을 받은 뒤
 	 * completeQuestions에서 페이지 병렬로 수행한다. 외부 AI 호출은 트랜잭션 밖, 저장만 짧게 트랜잭션.
+	 * 재분석이면 이미 처리한 질문(답변·모름·해당 없음·나중에 답하기)은 남겨 두고 같은 뜻의 질문을 다시 만들지 않는다.
 	 */
 	public AnalysisExecutionResult analyze(UUID handoverId) {
-		String combinedText = transactionTemplate.execute(status -> loadCombinedText(handoverId));
-		List<GeneratedQuestion> generated = generateQuestions(combinedText);
+		AnalysisInput input = transactionTemplate.execute(status -> loadAnalysisInput(handoverId));
+		List<GeneratedQuestion> candidates = QuestionSelector.dedupe(
+				generateQuestions(input.documentsText(), input.askedQuestions()), input.askedQuestions());
+		List<GeneratedQuestion> selected = candidates.stream()
+				.limit(QuestionSelector.MAX_QUESTIONS)
+				.toList();
 
 		return transactionTemplate.execute(status -> {
-			clarificationQuestionRepository.deleteAllByHandoverId(handoverId);
-			List<ClarificationQuestion> questions = new ArrayList<>(generated.stream()
-					.map(q -> ClarificationQuestion.create(
-							handoverId, q.type(), q.questionText(), q.reason(), q.evidence(), q.options()))
-					.toList());
-			if (questions.isEmpty()) {
-				// 안전장치: 모델이 질문을 하나도 안 냈을 때도 항상 최소 1개는 인계자에게 확인받는다.
+			clarificationQuestionRepository.deleteAllByHandoverIdAndStatus(handoverId, ClarificationQuestionStatus.PENDING);
+			List<ClarificationQuestion> questions = new ArrayList<>();
+			for (int i = 0; i < selected.size(); i++) {
+				GeneratedQuestion q = selected.get(i);
+				questions.add(ClarificationQuestion.create(handoverId, q.type(), q.questionText(), q.reason(),
+						q.evidence(), q.options(), targetSectionsOrDefault(q), i + 1));
+			}
+			if (questions.isEmpty() && input.askedQuestions().isEmpty()) {
+				// 안전장치: 처음 분석인데 남은 질문이 하나도 없어도 최소 1개는 인계자에게 확인받는다.
 				questions.add(ClarificationQuestion.create(handoverId, ClarificationQuestionType.INTERVIEW,
 						"자료에 담기지 않았지만 후임자가 꼭 알아야 할 내용이 있나요? 있다면 알려주세요.",
 						"자료만으로는 놓칠 수 있는 맥락을 인계자에게 직접 확인하기 위한 기본 질문입니다.",
-						null, List.of()));
+						null, List.of(), List.of(DraftSection.RULES_AND_EXCEPTIONS, DraftSection.FIRST_WEEK_CHECKLIST), 1));
 			}
 			clarificationQuestionRepository.saveAll(questions);
-			return new AnalysisExecutionResult(questions.size());
+			// 새 질문이 없어도 초안이 아직 없으면 답변 단계로 보내 완료 처리에서 초안을 만들게 한다.
+			boolean hasDraft = handoverDraftRepository.findByHandoverId(handoverId).isPresent();
+			return new AnalysisExecutionResult(questions.size(), !questions.isEmpty() || !hasDraft);
 		});
 	}
 
@@ -168,12 +185,14 @@ public class RagAnalysisService {
 		return HandoverDraftResponse.from(draft);
 	}
 
+	/** 중요도순(priority 오름차순, 없으면 뒤로), 같으면 생성순. */
 	@Transactional(readOnly = true)
 	public List<ClarificationQuestionResponse> getQuestions(UUID handoverId, ClarificationQuestionType type) {
 		List<ClarificationQuestion> questions = type == null
 				? clarificationQuestionRepository.findAllByHandoverId(handoverId)
 				: clarificationQuestionRepository.findAllByHandoverIdAndType(handoverId, type);
 		return questions.stream()
+				.sorted(QUESTION_ORDER)
 				.map(ClarificationQuestionResponse::from)
 				.toList();
 	}
@@ -184,36 +203,141 @@ public class RagAnalysisService {
 				.filter(q -> q.getHandoverId().equals(handoverId))
 				.orElseThrow(() -> new BusinessException(ErrorCode.AI_QUESTION_NOT_FOUND));
 
-		if (request.skipped()) {
-			question.skip();
-		} else {
+		if (request.status() == ClarificationQuestionStatus.ANSWERED) {
 			question.answer(request.answer());
+		} else {
+			question.resolveWithoutAnswer(request.status());
 		}
 
 		return ClarificationQuestionResponse.from(question);
 	}
 
 	/**
-	 * 모든 질문이 답변/건너뛰기 상태인지 확인한 뒤, 자료 + 답변으로 초안을 "페이지 병렬"로 생성한다.
-	 * 초안은 이 시점에 처음 만들어진다(분석 단계는 질문만 생성하므로).
-	 * 확인 질문 단계(ANSWERING)에서만 가능하다 — 이미 초안을 만든 뒤 다시 부르면 초안을 통째로 다시 만들어
-	 * 사용자가 고친 내용을 덮어쓰기 때문이다. 다시 만들려면 분석부터 다시 시작한다.
-	 * beforeAiCall은 검증을 모두 통과한 뒤 AI 호출 직전에 부른다(사용량 차감).
+	 * 미응답(PENDING) 질문이 없는지 확인한 뒤 처리 결과를 문서에 반영한다.
+	 * - 초안이 없으면(첫 완료) 자료 + 처리 결과로 초안 전체를 "페이지 병렬"로 생성한다.
+	 * - 초안이 이미 있으면(재분석 후 완료) 아직 반영되지 않은 질문의 대상 섹션만 갱신한다.
+	 * 나중에 답하기(DEFERRED)는 완료를 막지 않고, 답이 달린 뒤 applyAnswers로 반영한다.
+	 * 확인 질문 단계(ANSWERING)에서만 가능하다. beforeAiCall은 검증을 모두 통과한 뒤 AI 호출 직전에 부른다(사용량 차감).
 	 */
 	public HandoverDraftResponse completeQuestions(UUID handoverId, Runnable beforeAiCall) {
-		CompletionInput input = transactionTemplate.execute(status -> loadCompletionInput(handoverId));
-		beforeAiCall.run();
+		ApplyInput input = transactionTemplate.execute(status -> {
+			Handover handover = loadHandover(handoverId);
+			if (handover.getStatus() != HandoverStatus.ANSWERING) {
+				throw new BusinessException(ErrorCode.HANDOVER_INVALID_STATE,
+						"확인 질문에 답하는 단계에서만 인수인계서를 생성할 수 있습니다: " + handover.getStatus());
+			}
+			List<ClarificationQuestion> questions = clarificationQuestionRepository.findAllByHandoverId(handoverId);
+			if (questions.stream().anyMatch(q -> q.getStatus() == ClarificationQuestionStatus.PENDING)) {
+				throw new BusinessException(ErrorCode.AI_QUESTIONS_INCOMPLETE);
+			}
+			return loadApplyInput(handoverId, questions);
+		});
 
-		HandoverDraftContent content = generateDraftPaged(input.documentsText(), input.qnaText());
+		if (input.currentContent() != null) {
+			return applyToSections(handoverId, input, true, beforeAiCall);
+		}
+
+		List<QuestionSnapshot> resolved = input.questions().stream()
+				.filter(q -> q.status().isResolved())
+				.toList();
+		beforeAiCall.run();
+		HandoverDraftContent content = generateDraftPaged(input.documentsText(), toQnaText(resolved));
 
 		return transactionTemplate.execute(status -> {
 			HandoverDraft draft = handoverDraftRepository.findByHandoverId(handoverId)
 					.orElseGet(() -> HandoverDraft.create(handoverId, content));
 			draft.replaceContent(content);
 			handoverDraftRepository.save(draft);
+			markApplied(resolved);
 			loadHandover(handoverId).markQuestionsCompleted();
 			return HandoverDraftResponse.from(draft);
 		});
+	}
+
+	/**
+	 * 문서가 만들어진 뒤에 답한 질문(나중에 답하기였던 질문 등)을 문서에 반영한다.
+	 * 문서 전체를 다시 만들지 않고, 반영되지 않은 질문들의 대상 섹션만 갱신한다. 반영할 게 없으면 현재 문서를 그대로 반환한다.
+	 * beforeAiCall은 실제로 AI를 부를 때만 호출 직전에 부른다(사용량 차감).
+	 */
+	public HandoverDraftResponse applyAnswers(UUID handoverId, Runnable beforeAiCall) {
+		ApplyInput input = transactionTemplate.execute(status -> {
+			if (handoverDraftRepository.findByHandoverId(handoverId).isEmpty()) {
+				throw new BusinessException(ErrorCode.AI_DRAFT_NOT_FOUND);
+			}
+			return loadApplyInput(handoverId, clarificationQuestionRepository.findAllByHandoverId(handoverId));
+		});
+		return applyToSections(handoverId, input, false, beforeAiCall);
+	}
+
+	private HandoverDraftResponse applyToSections(UUID handoverId, ApplyInput input, boolean completeQuestions,
+			Runnable beforeAiCall) {
+		List<QuestionSnapshot> toApply = input.questions().stream()
+				.filter(QuestionSnapshot::needsApply)
+				.toList();
+		Set<DraftSection> sections = toApply.stream()
+				.flatMap(q -> sectionsToUpdate(q).stream())
+				.collect(Collectors.toCollection(() -> EnumSet.noneOf(DraftSection.class)));
+
+		if (!sections.isEmpty()) {
+			beforeAiCall.run();
+		}
+		HandoverDraftContent patch = sections.isEmpty()
+				? null
+				: generateSectionUpdate(input.documentsText(), DraftSection.extract(input.currentContent(), sections),
+						toQnaText(toApply), sections);
+
+		return transactionTemplate.execute(status -> {
+			HandoverDraft draft = handoverDraftRepository.findByHandoverId(handoverId)
+					.orElseThrow(() -> new BusinessException(ErrorCode.AI_DRAFT_NOT_FOUND));
+			if (patch != null) {
+				// AI 호출 중 사람이 고친 다른 섹션을 덮어쓰지 않도록, 저장 시점의 최신 content에 대상 섹션만 합친다.
+				draft.replaceContent(DraftSection.merge(draft.getContent(), patch, sections));
+			}
+			markApplied(toApply);
+			if (completeQuestions) {
+				loadHandover(handoverId).markQuestionsCompleted();
+			}
+			return HandoverDraftResponse.from(draft);
+		});
+	}
+
+	/** 반영 대상으로 읽었던 상태·답변이 그대로인 질문만 반영 완료로 표시한다(AI 호출 중 답이 바뀌었으면 다음 반영 때 다시 반영). */
+	private void markApplied(List<QuestionSnapshot> applied) {
+		Instant now = Instant.now();
+		Map<UUID, QuestionSnapshot> byId = applied.stream()
+				.collect(Collectors.toMap(QuestionSnapshot::id, q -> q));
+		clarificationQuestionRepository.findAllById(byId.keySet()).stream()
+				.filter(q -> byId.get(q.getId()).matches(q))
+				.forEach(q -> q.markApplied(now));
+	}
+
+	/** 모름은 "확인 필요" 항목을 첫 주 체크리스트에 남기므로 대상 섹션에 체크리스트를 더한다. */
+	private List<DraftSection> sectionsToUpdate(QuestionSnapshot question) {
+		List<DraftSection> sections = new ArrayList<>(question.targetSections());
+		if (sections.isEmpty()) {
+			sections.addAll(defaultTargetSections(question.type()));
+		}
+		if (question.status() == ClarificationQuestionStatus.UNKNOWN && !sections.contains(DraftSection.FIRST_WEEK_CHECKLIST)) {
+			sections.add(DraftSection.FIRST_WEEK_CHECKLIST);
+		}
+		return sections;
+	}
+
+	private List<DraftSection> targetSectionsOrDefault(GeneratedQuestion question) {
+		if (question.targetSections() == null) {
+			return defaultTargetSections(question.type());
+		}
+		List<DraftSection> sections = question.targetSections().stream()
+				.filter(Objects::nonNull)
+				.distinct()
+				.toList();
+		return sections.isEmpty() ? defaultTargetSections(question.type()) : sections;
+	}
+
+	private List<DraftSection> defaultTargetSections(ClarificationQuestionType type) {
+		return type == ClarificationQuestionType.CONFLICT
+				? List.of(DraftSection.CONFIRMED_CRITERIA)
+				: List.of(DraftSection.RULES_AND_EXCEPTIONS);
 	}
 
 	private String loadCombinedText(UUID handoverId) {
@@ -230,27 +354,38 @@ public class RagAnalysisService {
 				.collect(Collectors.joining("\n\n"));
 	}
 
-	private CompletionInput loadCompletionInput(UUID handoverId) {
-		Handover handover = loadHandover(handoverId);
-		if (handover.getStatus() != HandoverStatus.ANSWERING) {
-			throw new BusinessException(ErrorCode.HANDOVER_INVALID_STATE,
-					"확인 질문에 답하는 단계에서만 인수인계서를 생성할 수 있습니다: " + handover.getStatus());
-		}
+	private AnalysisInput loadAnalysisInput(UUID handoverId) {
+		List<String> askedQuestions = clarificationQuestionRepository.findAllByHandoverId(handoverId).stream()
+				.filter(q -> q.getStatus() != ClarificationQuestionStatus.PENDING)
+				.map(ClarificationQuestion::getQuestionText)
+				.toList();
+		return new AnalysisInput(loadCombinedText(handoverId), askedQuestions);
+	}
 
-		List<ClarificationQuestion> questions = clarificationQuestionRepository.findAllByHandoverId(handoverId);
+	private ApplyInput loadApplyInput(UUID handoverId, List<ClarificationQuestion> questions) {
+		HandoverDraftContent currentContent = handoverDraftRepository.findByHandoverId(handoverId)
+				.map(HandoverDraft::getContent)
+				.orElse(null);
+		List<QuestionSnapshot> snapshots = questions.stream()
+				.sorted(QUESTION_ORDER)
+				.map(QuestionSnapshot::from)
+				.toList();
+		return new ApplyInput(loadCombinedText(handoverId), currentContent, snapshots);
+	}
 
-		boolean hasPending = questions.stream()
-				.anyMatch(q -> q.getStatus() == ClarificationQuestionStatus.PENDING);
-		if (hasPending) {
-			throw new BusinessException(ErrorCode.AI_QUESTIONS_INCOMPLETE);
-		}
-
-		String documentsText = loadCombinedText(handoverId);
-		String qnaText = questions.stream()
-				.filter(q -> q.getStatus() == ClarificationQuestionStatus.ANSWERED)
-				.map(q -> "Q: " + q.getQuestionText() + "\nA: " + q.getAnswer())
+	/** 처리 결과를 [답변]·[모름]·[해당 없음]으로 구분해 프롬프트용 텍스트로 만든다(RagPrompts.QNA_RULE과 짝). */
+	private String toQnaText(List<QuestionSnapshot> questions) {
+		return questions.stream()
+				.filter(q -> q.status().isResolved())
+				.map(q -> {
+					String location = "(반영 위치: " + DraftSection.describe(sectionsToUpdate(q)) + ")";
+					return switch (q.status()) {
+						case ANSWERED -> "[답변] Q: " + q.questionText() + " " + location + "\nA: " + q.answer();
+						case UNKNOWN -> "[모름] Q: " + q.questionText() + " " + location;
+						default -> "[해당 없음] Q: " + q.questionText() + " " + location;
+					};
+				})
 				.collect(Collectors.joining("\n\n"));
-		return new CompletionInput(documentsText, qnaText);
 	}
 
 	private Handover loadHandover(UUID handoverId) {
@@ -259,9 +394,12 @@ public class RagAnalysisService {
 	}
 
 	/** 질문만 생성(초안과 분리). 출력이 작아 빠르게 먼저 보여줄 수 있다. */
-	private List<GeneratedQuestion> generateQuestions(String documentsText) {
+	private List<GeneratedQuestion> generateQuestions(String documentsText, List<String> askedQuestions) {
+		String asked = askedQuestions.isEmpty()
+				? "(없음)"
+				: askedQuestions.stream().map(q -> "- " + q).collect(Collectors.joining("\n"));
 		SystemPromptTemplate template = new SystemPromptTemplate(RagPrompts.QUESTIONS_SYSTEM_TEMPLATE);
-		Message systemMessage = template.createMessage(Map.of("documents", documentsText));
+		Message systemMessage = template.createMessage(Map.of("documents", documentsText, "askedQuestions", asked));
 
 		GeneratedQuestions result = chatClient.prompt()
 				.options(OpenAiChatOptions.builder().model(analysisModel))
@@ -295,13 +433,15 @@ public class RagAnalysisService {
 
 	private DraftPageA generatePageA(String documentsText, String qnaText) {
 		return generatePage(documentsText, qnaText,
-				"업무 개요(purpose), 완료 기준(completionCriteria), 진행 중인 업무(ongoingTasks), 반복 업무(recurringTasks), 업무 기준과 예외(rulesAndExceptions)",
+				DraftSection.describe(List.of(DraftSection.PURPOSE, DraftSection.COMPLETION_CRITERIA,
+						DraftSection.ONGOING_TASKS, DraftSection.RECURRING_TASKS, DraftSection.RULES_AND_EXCEPTIONS)),
 				DraftPageA.class);
 	}
 
 	private DraftPageB generatePageB(String documentsText, String qnaText) {
 		return generatePage(documentsText, qnaText,
-				"주요 관계자(stakeholders), 사용 도구와 자료(tools), 업무 일정(schedule), 접근 권한과 계정(accessAccounts), 첫 주 체크리스트(firstWeekChecklist), 확인된 업무 기준(confirmedCriteria)",
+				DraftSection.describe(List.of(DraftSection.STAKEHOLDERS, DraftSection.TOOLS, DraftSection.SCHEDULE,
+						DraftSection.ACCESS_ACCOUNTS, DraftSection.FIRST_WEEK_CHECKLIST, DraftSection.CONFIRMED_CRITERIA)),
 				DraftPageB.class);
 	}
 
@@ -339,16 +479,25 @@ public class RagAnalysisService {
 		return questions == null ? List.of() : questions;
 	}
 
-	private HandoverDraftContent regenerateDraft(HandoverDraftContent currentDraft, String qnaText) {
-		SystemPromptTemplate template = new SystemPromptTemplate(RagPrompts.REGENERATE_SYSTEM_TEMPLATE);
+	/** 대상 섹션만 다시 만든다. 결과에서 대상이 아닌 필드는 merge 때 버려진다. */
+	private HandoverDraftContent generateSectionUpdate(String documentsText, HandoverDraftContent currentSections,
+			String qnaText, Set<DraftSection> sections) {
+		SystemPromptTemplate template = new SystemPromptTemplate(RagPrompts.SECTION_UPDATE_SYSTEM_TEMPLATE);
 		Message systemMessage = template.createMessage(Map.of(
-				"draft", writeJson(currentDraft),
-				"qna", qnaText));
+				"documents", documentsText,
+				"currentSections", writeJson(currentSections),
+				"qna", qnaText,
+				"sections", DraftSection.describe(sections)));
 
-		return chatClient.prompt()
+		HandoverDraftContent patch = chatClient.prompt()
+				.options(OpenAiChatOptions.builder().model(analysisModel))
 				.messages(List.of(systemMessage))
 				.call()
 				.entity(HandoverDraftContent.class);
+		if (patch == null) {
+			throw new BusinessException(ErrorCode.INTERNAL_ERROR, "AI 문서 갱신 중 오류가 발생했습니다.");
+		}
+		return patch;
 	}
 
 	private String writeJson(HandoverDraftContent content) {
@@ -520,9 +669,28 @@ public class RagAnalysisService {
 		return (value == null || value.isBlank()) ? "-" : value;
 	}
 
-	public record AnalysisExecutionResult(int questionCount) {
+	/** needsAnswering: 답변 단계(ANSWERING)로 보낼지. 새 질문이 있거나, 질문이 없어도 아직 초안이 없으면 true. */
+	public record AnalysisExecutionResult(int questionCount, boolean needsAnswering) {
 	}
 
-	private record CompletionInput(String documentsText, String qnaText) {
+	private record AnalysisInput(String documentsText, List<String> askedQuestions) {
+	}
+
+	private record ApplyInput(String documentsText, HandoverDraftContent currentContent, List<QuestionSnapshot> questions) {
+	}
+
+	/** 트랜잭션 밖(AI 호출 중)에서 쓰는 질문 값 복사본. 저장 시점에 원본과 비교해 그 사이 바뀌었는지 확인한다. */
+	private record QuestionSnapshot(UUID id, ClarificationQuestionType type, String questionText,
+			ClarificationQuestionStatus status, String answer, List<DraftSection> targetSections, boolean needsApply) {
+
+		static QuestionSnapshot from(ClarificationQuestion question) {
+			return new QuestionSnapshot(question.getId(), question.getType(), question.getQuestionText(),
+					question.getStatus(), question.getAnswer(), List.copyOf(question.getTargetSections()),
+					question.needsApply());
+		}
+
+		boolean matches(ClarificationQuestion question) {
+			return question.getStatus() == status && Objects.equals(question.getAnswer(), answer);
+		}
 	}
 }
