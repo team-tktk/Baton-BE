@@ -37,6 +37,7 @@ public class SecurityConfig {
 				.cors(Customizer.withDefaults())
 				.csrf(csrf -> csrf
 						.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+						.ignoringRequestMatchers("/api/v1/integrations/slack/events")
 						.csrfTokenRequestHandler(new SpaCsrfTokenRequestHandler()))
 				.addFilterAfter(new CsrfCookieFilter(), BasicAuthenticationFilter.class)
 				// 보안 응답 헤더 — 브라우저가 알아서 공격을 막도록 지시한다.
@@ -54,6 +55,8 @@ public class SecurityConfig {
 				.authorizeHttpRequests(auth -> auth
 						// 인증 없이 접근 가능한 공개 엔드포인트
 						.requestMatchers("/api/v1/auth/signup", "/api/v1/auth/login").permitAll()
+						.requestMatchers("/api/v1/integrations/slack/oauth/callback").permitAll()
+						.requestMatchers("/api/v1/integrations/slack/events").permitAll()
 						.requestMatchers("/health", "/actuator/health").permitAll()
 						.requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
 						// 그 외 모든 요청은 로그인 필요

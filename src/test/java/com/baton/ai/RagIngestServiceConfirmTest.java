@@ -83,7 +83,7 @@ class RagIngestServiceConfirmTest {
 	@Test
 	void indexConfirmedEmbedsOnlyMaskedText() {
 		when(sourceDocumentPersistence.readForIndexing(fileId))
-				.thenReturn(new SourceDocumentPersistence.IndexingSource("contract.docx", MASKED_TEXT));
+				.thenReturn(new SourceDocumentPersistence.IndexingSource("contract.docx", MASKED_TEXT, true));
 
 		service.indexConfirmed(handoverId, fileId);
 
@@ -104,7 +104,7 @@ class RagIngestServiceConfirmTest {
 	@Test
 	void indexConfirmedFailureMarksFileFailed() {
 		when(sourceDocumentPersistence.readForIndexing(fileId))
-				.thenReturn(new SourceDocumentPersistence.IndexingSource("contract.docx", MASKED_TEXT));
+				.thenReturn(new SourceDocumentPersistence.IndexingSource("contract.docx", MASKED_TEXT, true));
 		doThrow(new RuntimeException("openai down")).when(vectorStore).add(anyList());
 
 		assertThatThrownBy(() -> service.indexConfirmed(handoverId, fileId))
@@ -122,7 +122,7 @@ class RagIngestServiceConfirmTest {
 		ReflectionTestUtils.setField(document, "maskingConfirmedAt", Instant.now());
 		when(sourceDocumentRepository.findById(fileId)).thenReturn(Optional.of(document));
 		when(sourceDocumentPersistence.readForIndexing(fileId))
-				.thenReturn(new SourceDocumentPersistence.IndexingSource("contract.docx", MASKED_TEXT));
+				.thenReturn(new SourceDocumentPersistence.IndexingSource("contract.docx", MASKED_TEXT, true));
 
 		service.retry(handoverId, fileId);
 

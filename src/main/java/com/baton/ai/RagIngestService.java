@@ -145,12 +145,46 @@ public class RagIngestService {
 	public void indexConfirmed(UUID handoverId, UUID fileId) {
 		SourceDocumentPersistence.IndexingSource source = sourceDocumentPersistence.readForIndexing(fileId);
 		try {
-			List<String> chunkIds = embed(handoverId, fileId, source.fileName(), List.of(new Document(source.text())));
+			List<String> chunkIds = source.enabled()
+					? embed(handoverId, fileId, source.fileName(), List.of(new Document(source.text())))
+					: List.of();
 			sourceDocumentPersistence.markIndexed(fileId, chunkIds);
 		} catch (Exception e) {
 			log.error("[*] Masked text indexing failed for sourceDocumentId={}", fileId, e);
 			sourceDocumentPersistence.markFailed(fileId);
 			throw new BusinessException(ErrorCode.AI_FILE_PARSE_FAILED, "마스킹된 텍스트를 인덱싱하지 못했습니다. 재처리해주세요.");
+		}
+	}
+
+	/** 웹/Slack에서 확보한 텍스트도 파일과 똑같이 마스킹 검수와 임베딩 파이프라인을 거친다. */
+	public SourceDocument ingestText(UUID handoverId, UUID sourceId, String text) {
+		SourceDocument source = findOwned(handoverId, sourceId);
+		if (text == null || text.isBlank()) {
+			sourceDocumentPersistence.markFailed(sourceId);
+			throw new BusinessException(ErrorCode.AI_EXTERNAL_SOURCE_EMPTY);
+		}
+		try {
+			if (maskingEnabled) {
+				holdForMaskingReview(handoverId, source, text);
+			} else if (source.isEnabled()) {
+				List<String> chunkIds = embed(handoverId, sourceId, source.getFileName(), List.of(new Document(text)));
+				sourceDocumentPersistence.markIndexed(sourceId, text, chunkIds);
+			} else {
+				sourceDocumentPersistence.markIndexed(sourceId, text, List.of());
+			}
+			return refreshed(source);
+		} catch (BusinessException e) {
+			throw e;
+		} catch (Exception e) {
+			log.error("[*] External source ingest failed for sourceDocumentId={}", sourceId, e);
+			sourceDocumentPersistence.markFailed(sourceId);
+			throw new BusinessException(ErrorCode.AI_FILE_PARSE_FAILED, "외부 자료를 인덱싱하지 못했습니다.");
+		}
+	}
+
+	public void deleteIndex(SourceDocument source) {
+		if (source.getChunkIds() != null && !source.getChunkIds().isEmpty()) {
+			vectorStore.delete(source.getChunkIds());
 		}
 	}
 
@@ -183,7 +217,7 @@ public class RagIngestService {
 	 * 파일을 지우면 그만큼 다시 풀리는 구조라(하드 삭제), 계정이 영구히 막히지는 않는다.
 	 */
 	private void validateQuota(UUID handoverId, long newFileSize) {
-		long currentCount = sourceDocumentRepository.countByHandoverId(handoverId);
+		long currentCount = sourceDocumentRepository.countByHandoverIdAndSourceType(handoverId, SourceType.FILE);
 		if (currentCount >= maxFilesPerHandover) {
 			throw new BusinessException(ErrorCode.AI_UPLOAD_QUOTA_EXCEEDED,
 					"이 인수인계에는 파일을 최대 %d개까지 업로드할 수 있습니다.".formatted(maxFilesPerHandover));
@@ -321,6 +355,11 @@ public class RagIngestService {
 
 	@Transactional(readOnly = true)
 	public List<SourceDocument> listByHandover(UUID handoverId) {
+		return sourceDocumentRepository.findAllByHandoverIdAndSourceType(handoverId, SourceType.FILE);
+	}
+
+	@Transactional(readOnly = true)
+	public List<SourceDocument> listAllSources(UUID handoverId) {
 		return sourceDocumentRepository.findAllByHandoverId(handoverId);
 	}
 
@@ -333,6 +372,9 @@ public class RagIngestService {
 	@Transactional(readOnly = true)
 	public DownloadedFile download(UUID handoverId, UUID fileId) {
 		SourceDocument sourceDocument = findOwned(handoverId, fileId);
+		if (sourceDocument.getSourceType() != SourceType.FILE) {
+			throw new BusinessException(ErrorCode.AI_SOURCE_DOCUMENT_NOT_FOUND);
+		}
 		byte[] content = s3FileStorage.download(sourceDocument.getS3Key());
 		return new DownloadedFile(sourceDocument.getFileName(), sourceDocument.getMimeType(), content);
 	}

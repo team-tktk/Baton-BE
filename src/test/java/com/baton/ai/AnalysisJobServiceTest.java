@@ -76,7 +76,7 @@ class AnalysisJobServiceTest {
 	@Test
 	void rejectsWhenMaskingReviewIsNotConfirmed() {
 		when(analysisJobRepository.existsByHandoverIdAndStatusIn(any(), anyCollection())).thenReturn(false);
-		when(sourceDocumentRepository.existsByHandoverIdAndStatusIn(eq(handoverId), anyCollection())).thenReturn(true);
+		when(sourceDocumentRepository.existsByHandoverIdAndEnabledTrueAndStatusIn(eq(handoverId), anyCollection())).thenReturn(true);
 
 		assertThatThrownBy(() -> service.start(handoverId, false))
 				.isInstanceOfSatisfying(BusinessException.class,

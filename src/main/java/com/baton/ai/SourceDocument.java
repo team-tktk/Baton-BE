@@ -46,6 +46,10 @@ public class SourceDocument {
 	@Column(name = "handover_id", nullable = false)
 	private UUID handoverId;
 
+	@Enumerated(EnumType.STRING)
+	@Column(name = "source_type", nullable = false, length = 20)
+	private SourceType sourceType;
+
 	@Column(name = "file_name", nullable = false)
 	private String fileName;
 
@@ -58,6 +62,21 @@ public class SourceDocument {
 	/** S3에 저장된 원본 파일의 오브젝트 키. 다운로드 시 이 키로 S3에서 꺼내온다. */
 	@Column(name = "s3_key", nullable = false)
 	private String s3Key;
+
+	@Column(length = 2000)
+	private String description;
+
+	@Column(name = "original_url", length = 2048)
+	private String originalUrl;
+
+	@Column(name = "conversation_name", length = 255)
+	private String conversationName;
+
+	@Column(name = "source_occurred_at")
+	private Instant sourceOccurredAt;
+
+	@Column(nullable = false)
+	private boolean enabled;
 
 	@Enumerated(EnumType.STRING)
 	@Column(nullable = false, length = 20)
@@ -85,11 +104,47 @@ public class SourceDocument {
 
 	private SourceDocument(UUID handoverId, String fileName, String mimeType, long fileSize, String s3Key) {
 		this.handoverId = handoverId;
+		this.sourceType = SourceType.FILE;
 		this.fileName = fileName;
 		this.mimeType = mimeType;
 		this.fileSize = fileSize;
 		this.s3Key = s3Key;
 		this.status = SourceDocumentStatus.EXTRACTING;
+		this.enabled = true;
+	}
+
+	public static SourceDocument createExternal(UUID handoverId, SourceType sourceType, String title,
+			String description, String originalUrl, String conversationName, Instant sourceOccurredAt, boolean enabled) {
+		SourceDocument source = new SourceDocument(handoverId, title, "text/plain", 0L, "");
+		source.sourceType = sourceType;
+		source.description = description;
+		source.originalUrl = originalUrl;
+		source.conversationName = conversationName;
+		source.sourceOccurredAt = sourceOccurredAt;
+		source.enabled = enabled;
+		return source;
+	}
+
+	public void updateExternal(String title, String description, String originalUrl,
+			String conversationName, Instant sourceOccurredAt) {
+		this.fileName = title;
+		this.description = description;
+		this.originalUrl = originalUrl;
+		this.conversationName = conversationName;
+		this.sourceOccurredAt = sourceOccurredAt;
+		this.status = SourceDocumentStatus.EXTRACTING;
+		this.extractedText = null;
+		this.chunkIds = List.of();
+		this.maskingConfirmedAt = null;
+		this.updatedAt = Instant.now();
+	}
+
+	public void setEnabled(boolean enabled) {
+		this.enabled = enabled;
+		if (!enabled) {
+			this.chunkIds = List.of();
+		}
+		this.updatedAt = Instant.now();
 	}
 
 	public static SourceDocument create(UUID handoverId, String fileName, String mimeType, long fileSize, String s3Key) {
@@ -145,6 +200,9 @@ public class SourceDocument {
 
 	@PrePersist
 	void onCreate() {
+		if (this.sourceType == null) {
+			this.sourceType = SourceType.FILE;
+		}
 		this.createdAt = Instant.now();
 		this.updatedAt = this.createdAt;
 	}

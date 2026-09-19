@@ -181,8 +181,10 @@ public class RagQueryService {
 				sourceDocument.getId(),
 				sourceDocument.getFileName(),
 				buildLocator(match),
-				sourceDocument.getId(),   // fileId == sourceId (같은 SourceDocument id) — 다운로드 API용
-				sourceDocument.getUpdatedAt() != null ? sourceDocument.getUpdatedAt() : Instant.now());
+				sourceDocument.getSourceType() == SourceType.FILE ? sourceDocument.getId() : null,
+				sourceDocument.getUpdatedAt() != null ? sourceDocument.getUpdatedAt() : Instant.now(),
+				sourceDocument.getSourceType().name(),
+				sourceDocument.getOriginalUrl());
 	}
 
 	/** 벡터 청크 메타데이터의 chunkIndex/total_chunks로 문서 내 대략적인 위치를 표시한다. */
