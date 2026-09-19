@@ -2,7 +2,7 @@
 
 ## 1. 자동 검증 다시 실행
 
-현재 `codex/pdf-evidence-highlights` 브랜치에서 PowerShell로 실행한다.
+현재 `feat/pdf-evidence-highlights` 브랜치에서 PowerShell로 실행한다.
 
 ```powershell
 .\gradlew.bat test --tests 'com.baton.ai.*' --tests 'com.baton.masking.*' --tests 'com.baton.readiness.*' --rerun-tasks --no-daemon
@@ -108,7 +108,7 @@ Spring Boot가 `.env` 파일을 자동으로 읽는다고 가정하지 않는다
 최소 통과선은 샘플 업로드·확정·evidence 조회·다운로드·채팅 이력 저장, 마스킹 후 위치 유지, 다른 계정 접근 차단이다. 프론트 drawer/모바일 표시 검증은 Baton-FE 연결 후 별도로 한다.
 
 ```powershell
-git push -u origin codex/pdf-evidence-highlights
+git push -u origin feat/pdf-evidence-highlights
 ```
 
 문제가 있으면 실패한 단계, HTTP 상태, 오류 code와 테스트 자료의 evidence 응답을 공유한다. 로그인 쿠키·API 키·비밀번호는 공유하지 않는다.
