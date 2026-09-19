@@ -70,7 +70,7 @@ class RagIngestServiceQuotaTest {
 
 	@Test
 	void rejectsWhenFileCountQuotaExceeded() {
-		when(sourceDocumentRepository.countByHandoverId(handoverId)).thenReturn(30L);
+		when(sourceDocumentRepository.countByHandoverIdAndSourceType(handoverId, SourceType.FILE)).thenReturn(30L);
 		MockMultipartFile file = new MockMultipartFile("file", "doc.pdf", "application/pdf", "%PDF-1.4".getBytes());
 
 		assertThatThrownBy(() -> service.ingest(handoverId, file))
@@ -83,7 +83,7 @@ class RagIngestServiceQuotaTest {
 
 	@Test
 	void rejectsWhenHandoverTotalSizeQuotaExceeded() {
-		when(sourceDocumentRepository.countByHandoverId(handoverId)).thenReturn(5L);
+		when(sourceDocumentRepository.countByHandoverIdAndSourceType(handoverId, SourceType.FILE)).thenReturn(5L);
 		when(sourceDocumentRepository.sumFileSizeByHandoverId(handoverId)).thenReturn(299L * 1024 * 1024);
 		MockMultipartFile file = new MockMultipartFile("file", "doc.pdf", "application/pdf", new byte[2 * 1024 * 1024]);
 
@@ -98,7 +98,7 @@ class RagIngestServiceQuotaTest {
 	@Test
 	void rejectsWhenAccountTotalSizeQuotaExceeded() {
 		Handover handover = Handover.create(ownerId, "테스트 인수인계");
-		when(sourceDocumentRepository.countByHandoverId(handoverId)).thenReturn(5L);
+		when(sourceDocumentRepository.countByHandoverIdAndSourceType(handoverId, SourceType.FILE)).thenReturn(5L);
 		when(sourceDocumentRepository.sumFileSizeByHandoverId(handoverId)).thenReturn(0L);
 		when(handoverRepository.findById(handoverId)).thenReturn(java.util.Optional.of(handover));
 		when(sourceDocumentRepository.sumFileSizeByOwnerId(ownerId)).thenReturn(1023L * 1024 * 1024);

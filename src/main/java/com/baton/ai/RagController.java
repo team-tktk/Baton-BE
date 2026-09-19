@@ -580,7 +580,7 @@ public class RagController {
 		Handover handover = loadHandover(handoverId);
 		handoverPermission.requireViewer(handover, currentUserId(authentication));
 
-		return ragIngestService.listByHandover(handoverId).stream()
+		return ragIngestService.listAllSources(handoverId).stream()
 				.map(source -> SourceEvidenceResponse.from(handoverId, source))
 				.toList();
 	}

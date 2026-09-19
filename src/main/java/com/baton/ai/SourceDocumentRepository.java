@@ -16,25 +16,27 @@ public interface SourceDocumentRepository extends JpaRepository<SourceDocument, 
 
 	List<SourceDocument> findAllByHandoverId(UUID handoverId);
 
+	List<SourceDocument> findAllByHandoverIdAndSourceType(UUID handoverId, SourceType sourceType);
+
 	/** 마스킹 검수 확정이 동시에 두 번 처리되지 않도록 파일 행을 쓰기 잠금으로 읽는다. */
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("SELECT s FROM SourceDocument s WHERE s.id = :id")
 	Optional<SourceDocument> findByIdForUpdate(@Param("id") UUID id);
 
 	/** 분석 시작 전 — 마스킹 검수를 확정하지 않은 파일이 있는지. */
-	boolean existsByHandoverIdAndStatusIn(UUID handoverId, Collection<SourceDocumentStatus> statuses);
+	boolean existsByHandoverIdAndEnabledTrueAndStatusIn(UUID handoverId, Collection<SourceDocumentStatus> statuses);
 
 	/** 상세 화면 등 단건 인수인계의 첨부 파일 개수. */
-	long countByHandoverId(UUID handoverId);
+	long countByHandoverIdAndSourceType(UUID handoverId, SourceType sourceType);
 
 	/** 업로드 용량 상한 체크용 — 해당 인수인계에 이미 쌓인 파일들의 총 용량(바이트). */
-	@Query("SELECT COALESCE(SUM(s.fileSize), 0) FROM SourceDocument s WHERE s.handoverId = :handoverId")
+	@Query("SELECT COALESCE(SUM(s.fileSize), 0) FROM SourceDocument s WHERE s.handoverId = :handoverId AND s.sourceType = 'FILE'")
 	long sumFileSizeByHandoverId(@Param("handoverId") UUID handoverId);
 
 	/** 계정 전체 업로드 용량 상한 체크용 — 이 사람이 인계자인 모든 인수인계에 쌓인 파일 총 용량(바이트). */
 	@Query("""
 			SELECT COALESCE(SUM(s.fileSize), 0) FROM SourceDocument s
-			WHERE s.handoverId IN (SELECT h.id FROM Handover h WHERE h.ownerId = :ownerId)
+			WHERE s.sourceType = 'FILE' AND s.handoverId IN (SELECT h.id FROM Handover h WHERE h.ownerId = :ownerId)
 			""")
 	long sumFileSizeByOwnerId(@Param("ownerId") UUID ownerId);
 
@@ -42,6 +44,6 @@ public interface SourceDocumentRepository extends JpaRepository<SourceDocument, 
 	 * 목록 화면용 — 여러 인수인계의 첨부 파일 개수를 한 번에 집계한다(N+1 방지).
 	 * 결과는 Object[]{handoverId(UUID), count(Long)} 행들. 파일이 0개인 인수인계는 결과에 없다.
 	 */
-	@Query("SELECT s.handoverId, COUNT(s) FROM SourceDocument s WHERE s.handoverId IN :handoverIds GROUP BY s.handoverId")
+	@Query("SELECT s.handoverId, COUNT(s) FROM SourceDocument s WHERE s.sourceType = 'FILE' AND s.handoverId IN :handoverIds GROUP BY s.handoverId")
 	List<Object[]> countGroupedByHandoverIds(@Param("handoverIds") Collection<UUID> handoverIds);
 }

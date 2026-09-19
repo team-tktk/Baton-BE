@@ -218,7 +218,7 @@ public class RagAnalysisService {
 
 	private String loadCombinedText(UUID handoverId) {
 		List<SourceDocument> documents = sourceDocumentRepository.findAllByHandoverId(handoverId).stream()
-				.filter(document -> document.getStatus() == SourceDocumentStatus.INDEXED)
+				.filter(document -> document.getStatus() == SourceDocumentStatus.INDEXED && document.isEnabled())
 				.toList();
 
 		if (documents.isEmpty()) {

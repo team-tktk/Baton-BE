@@ -2,6 +2,7 @@ package com.baton.ai;
 
 import java.util.List;
 import java.util.UUID;
+import java.time.Instant;
 
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
@@ -34,6 +35,30 @@ public class SourceDocumentPersistence {
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public SourceDocument createInitial(UUID handoverId, String fileName, String mimeType, long fileSize, String s3Key) {
 		return sourceDocumentRepository.save(SourceDocument.create(handoverId, fileName, mimeType, fileSize, s3Key));
+	}
+
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public SourceDocument createExternal(UUID handoverId, SourceType type, String title, String description,
+			String originalUrl, String conversationName, Instant sourceOccurredAt, boolean enabled) {
+		return sourceDocumentRepository.save(SourceDocument.createExternal(handoverId, type, title, description,
+				originalUrl, conversationName, sourceOccurredAt, enabled));
+	}
+
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public void updateExternal(UUID sourceId, String title, String description, String originalUrl,
+			String conversationName, Instant sourceOccurredAt) {
+		sourceDocumentRepository.findById(sourceId).ifPresent(doc -> {
+			Long previousOid = largeObjectCleaner.extractedTextOid(sourceId);
+			maskingCandidateRepository.deleteAllBySourceDocumentId(sourceId);
+			doc.updateExternal(title, description, originalUrl, conversationName, sourceOccurredAt);
+			sourceDocumentRepository.saveAndFlush(doc);
+			largeObjectCleaner.unlinkIfReplaced(sourceId, previousOid);
+		});
+	}
+
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public void setEnabled(UUID sourceId, boolean enabled) {
+		sourceDocumentRepository.findById(sourceId).ifPresent(doc -> doc.setEnabled(enabled));
 	}
 
 	/** 텍스트를 바꾸는 메서드는 이전 원문 Large Object를 지운다(LargeObjectCleaner 참고). */
@@ -91,11 +116,11 @@ public class SourceDocumentPersistence {
 	@Transactional(readOnly = true)
 	public IndexingSource readForIndexing(UUID sourceDocumentId) {
 		return sourceDocumentRepository.findById(sourceDocumentId)
-				.map(doc -> new IndexingSource(doc.getFileName(), doc.getExtractedText()))
+				.map(doc -> new IndexingSource(doc.getFileName(), doc.getExtractedText(), doc.isEnabled()))
 				.orElseThrow(() -> new BusinessException(ErrorCode.AI_SOURCE_DOCUMENT_NOT_FOUND));
 	}
 
-	public record IndexingSource(String fileName, String text) {
+	public record IndexingSource(String fileName, String text, boolean enabled) {
 	}
 
 	@Transactional(propagation = Propagation.REQUIRES_NEW)

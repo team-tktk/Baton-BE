@@ -52,7 +52,7 @@ public class AnalysisJobService {
 			throw new BusinessException(ErrorCode.HANDOVER_INVALID_STATE, "현재 상태에서는 분석을 시작할 수 없습니다: " + handover.getStatus());
 		}
 
-		if (sourceDocumentRepository.existsByHandoverIdAndStatusIn(handoverId, UNCONFIRMED_FILE_STATUSES)) {
+		if (sourceDocumentRepository.existsByHandoverIdAndEnabledTrueAndStatusIn(handoverId, UNCONFIRMED_FILE_STATUSES)) {
 			throw new BusinessException(ErrorCode.MASKING_NOT_CONFIRMED);
 		}
 

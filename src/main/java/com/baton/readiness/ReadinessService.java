@@ -157,7 +157,7 @@ public class ReadinessService {
 
 	private List<SourceDocument> indexedSources(UUID handoverId) {
 		return sourceDocumentRepository.findAllByHandoverId(handoverId).stream()
-				.filter(source -> source.getStatus() == SourceDocumentStatus.INDEXED)
+				.filter(source -> source.getStatus() == SourceDocumentStatus.INDEXED && source.isEnabled())
 				.sorted(Comparator.comparing(SourceDocument::getId))
 				.toList();
 	}
