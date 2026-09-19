@@ -11,6 +11,7 @@ public record ChatAnswerResponse(
 		String answer,
 		boolean grounded,
 		AnswerSource answerSource,
+		boolean requiresConfirmation,
 		List<Citation> citations,
 		String fallbackContact,
 		Instant answeredAt) {
@@ -25,6 +26,7 @@ public record ChatAnswerResponse(
 				message.getAnswer(),
 				message.isGrounded(),
 				source,
+				message.isRequiresConfirmation(),
 				message.getCitations(),
 				source == AnswerSource.NOT_FOUND ? FALLBACK_CONTACT : null,
 				message.getCreatedAt());

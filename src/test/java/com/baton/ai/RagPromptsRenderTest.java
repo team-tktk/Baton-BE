@@ -51,4 +51,14 @@ class RagPromptsRenderTest {
 		assertThatCode(() -> template.createMessage(Map.of("context", nasty)))
 				.doesNotThrowAnyException();
 	}
+
+	@Test
+	void 근거_우선순위와_충돌_표시_규칙이_포함된다() {
+		assertThat(RagPrompts.SYSTEM_TEMPLATE)
+				.contains("확인 질문에 사용자가 직접 답한 최신 내용")
+				.contains("CONFIRM_REQUIRED")
+				.contains("담당자 확인 필요");
+		assertThat(RagPrompts.GENERAL_KNOWLEDGE_SYSTEM_TEMPLATE)
+				.contains("정확히 \"NOT_FOUND\"만 출력");
+	}
 }

@@ -30,7 +30,9 @@ public final class EvidenceCitations {
 				? new EvidenceLocator.Located(null, null, List.of())
 				: EvidenceLocator.at(text, range, source.getPdfTextLocations());
 		Object index = match.getMetadata().get("chunkIndex");
-		String locator = index instanceof Number n ? "청크 " + (n.intValue() + 1) : section(source);
+		Object heading = match.getMetadata().get("sectionHeading");
+		String locator = heading instanceof String value && !value.isBlank() ? value
+				: index instanceof Number n ? "청크 " + (n.intValue() + 1) : section(source);
 		return citation(source, located, locator);
 	}
 

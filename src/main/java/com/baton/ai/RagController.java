@@ -256,22 +256,21 @@ public class RagController {
 
 	@Operation(summary = "인수인계 문서 기반 질의응답",
 			description = """
-					업로드된 문서 안에서 근거(citation)를 찾아 답변한다(RAG). 주로 인수자가 첫날 궁금증을 물을 때 쓴다. 참여자 모두 가능.
+					최신 확인 답변·인수인계 초안·업무 파일·웹/Slack 자료에서 근거(citation)를 찾아 답변한다(RAG). 참여자 모두 가능.
 					answerSource로 답변 출처를 구분한다:
 					- DOCUMENT: 문서에서 근거를 찾음 → grounded=true, answer, citations[] 포함
-					- GENERAL_KNOWLEDGE: 문서에 근거는 없지만 AI가 상황에 맞게 스스로 판단해서 답함
-					  → grounded=false, answer 있음, citations=[], fallbackContact=null. 세 가지 경우가 여기 섞여 있다:
+					- GENERAL_KNOWLEDGE: 자료에 근거는 없지만 일반 개념 설명 또는 질문을 구체화하는 되물음
+					  → grounded=false, answer 있음, citations=[], fallbackContact=null. 두 가지 경우가 있다:
 					    1) 일반적으로 알려진 용어/개념(예: "ROI가 뭐야?") → 그 뜻을 바로 설명
 					    2) 질문이 애매해서 특정이 안 됨 → AI가 되묻는 질문을 answer로 반환(예: "어떤 배송업체를 말씀하시는 건가요?")
-					    3) 회사만 아는 고유 정보라 되물어도 답할 수 없음 → "팀장님/인계자에게 직접 문의하라"는 안내를 answer로 반환
 					  프론트는 이 경우 "사내 자료 기준 답변이 아님"을 표시해주는 게 좋다. answer 자체가 이미 자연어 안내문이라
 					  별도 UI 분기 없이 그대로 보여줘도 된다.
-					- NOT_FOUND: 위 판단 자체가 기술적으로 실패했을 때만 쓰는 최후 수단(사실상 드묾)
+					- NOT_FOUND: 회사/업무 고유 사실인데 현재 근거에서 확인할 수 없거나 판단 호출이 실패함
 					  → grounded=false, answer=null, fallbackContact(문의 대상 안내) 포함.
 
-					citations[].sourceId == fileId == 업로드 파일(SourceDocument) id로 항상 같은 값이다.
-					원문 메타데이터는 GET /sources/{sourceId}, 원본 파일 다운로드는 GET /files/{fileId}/download로 잇는다.
-					locator는 문서 내 대략 위치(청크 순번). title은 파일명.
+					requiresConfirmation=true면 최신 근거끼리 충돌한 경우이므로 "담당자 확인 필요" UI를 표시한다.
+					파일 근거만 citations[].fileId가 있고 다운로드할 수 있다. HANDOVER_DRAFT·CLARIFICATION_ANSWER 근거는 fileId/url이 null이다.
+					FILE·WEB_LINK·SLACK_MESSAGE의 원문 메타데이터는 GET /sources/{sourceId}로 조회한다.
 
 					- AI 요청 한도 초과(인수인계서 생성·보완안 생성·채팅 합산): 429(code=AI_USAGE_LIMIT_EXCEEDED, Retry-After 헤더·retryAt 포함)
 					""",
@@ -293,6 +292,7 @@ public class RagController {
 								  "answer": "오늘 오후 3시까지 답이 없으면 물류팀에 공유하세요.",
 								  "grounded": true,
 								  "answerSource": "DOCUMENT",
+								  "requiresConfirmation": false,
 								  "citations": [
 								    { "sourceId": "a1b2c3d4-...", "title": "문제상황_대응방법.pdf", "locator": "청크 3/12", "fileId": "a1b2c3d4-...", "updatedAt": "2026-08-21T09:00:00Z" }
 								  ],
@@ -322,14 +322,14 @@ public class RagController {
 								  "answeredAt": "2026-08-25T02:00:00Z"
 								}
 								"""),
-						@ExampleObject(name = "회사 고유 정보라 팀장님/인계자에게 문의하라고 안내한 경우", value = """
+						@ExampleObject(name = "회사 고유 정보인데 근거가 없는 경우", value = """
 								{
 								  "messageId": "f6a7b8c9-...",
-								  "answer": "이 부분은 자료에 없어서 제가 확인해드리기 어려워요. 팀장님이나 인계자분께 직접 여쭤보시는 게 좋을 것 같아요.",
+								  "answer": null,
 								  "grounded": false,
-								  "answerSource": "GENERAL_KNOWLEDGE",
+								  "answerSource": "NOT_FOUND",
 								  "citations": [],
-								  "fallbackContact": null,
+								  "fallbackContact": "업로드된 문서에서 답을 찾지 못했습니다. 인계자에게 직접 문의해주세요.",
 								  "answeredAt": "2026-08-25T02:00:00Z"
 								}
 								"""),
