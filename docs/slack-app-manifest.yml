@@ -1,9 +1,5 @@
 display_information:
   name: BATON
-features:
-  bot_user:
-    display_name: BATON
-    always_online: false
 oauth_config:
   redirect_urls:
     - http://127.0.0.1:8081/api/v1/integrations/slack/oauth/callback
