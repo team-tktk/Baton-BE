@@ -15,5 +15,6 @@ public class SlackSubscription {
  @Column(name="updated_at",nullable=false) private Instant updatedAt;
  public static SlackSubscription create(UUID h,UUID c,String id,String name){var s=new SlackSubscription();s.handoverId=h;s.connectionId=c;s.channelId=id;s.channelName=name;s.updatedAt=Instant.now();return s;}
  public void synced(String ts,String nextCursor){if(ts!=null&&!ts.isBlank()&&(oldestTs==null||Double.parseDouble(ts)>Double.parseDouble(oldestTs)))oldestTs=ts;backfillCursor=nextCursor;if(nextCursor==null||nextCursor.isBlank())backfillComplete=true;updatedAt=Instant.now();}
+ public void enable(){enabled=true;updatedAt=Instant.now();}
  public void disable(){enabled=false;updatedAt=Instant.now();}
 }
