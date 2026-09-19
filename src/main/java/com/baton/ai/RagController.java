@@ -225,6 +225,20 @@ public class RagController {
 		return SourceDetailResponse.from(ragIngestService.getSource(handoverId, sourceId));
 	}
 
+	@Operation(summary = "인용문으로 PDF 근거 위치 조회",
+			description = "채팅·준비도 공용. 현재 검색 가능한 본문에서 인용문을 검증한다. 페이지는 1부터, 좌표는 좌상단 기준 0~1 비율. "
+					+ "중복/불일치 인용문은 quote/page=null, highlights=[]로 반환한다. 기존 자료·비PDF는 좌표 없이 인용문만 제공할 수 있다.")
+	@GetMapping("/sources/{sourceId}/evidence")
+	public com.baton.ai.dto.Citation getEvidence(@PathVariable UUID handoverId, @PathVariable UUID sourceId,
+			@RequestParam String quote, Authentication authentication) {
+		Handover handover = loadHandover(handoverId);
+		handoverPermission.requireViewer(handover, currentUserId(authentication));
+		if (quote.isBlank() || quote.length() > 4000) {
+			throw new BusinessException(ErrorCode.BAD_REQUEST, "인용문은 1~4000자로 입력해주세요.");
+		}
+		return EvidenceCitations.resolve(ragIngestService.getSource(handoverId, sourceId), quote);
+	}
+
 	@Operation(summary = "채팅 추천 질문",
 			description = """
 					채팅창에서 바로 눌러볼 수 있는 추천 질문 목록. 인수인계 초안 내용에 근거해 AI가 만들고,

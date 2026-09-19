@@ -65,6 +65,7 @@ dependencies {
 	implementation 'org.springframework.ai:spring-ai-starter-model-openai'
 	// PDF/DOCX/XLSX/PPTX 등 여러 포맷을 하나의 리더로 파싱
 	implementation 'org.springframework.ai:spring-ai-tika-document-reader'
+	implementation 'org.apache.pdfbox:pdfbox:3.0.7'
 	implementation 'org.jsoup:jsoup:1.18.3'
 
 	// 원본 파일 저장 — EC2에 붙인 IAM 역할로 인증(코드에 키 없음)

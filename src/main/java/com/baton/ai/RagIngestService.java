@@ -146,7 +146,7 @@ public class RagIngestService {
 		SourceDocumentPersistence.IndexingSource source = sourceDocumentPersistence.readForIndexing(fileId);
 		try {
 			List<String> chunkIds = source.enabled()
-					? embed(handoverId, fileId, source.fileName(), List.of(new Document(source.text())))
+					? embed(handoverId, fileId, source.fileName(), List.of(new Document(source.text())), source.locations())
 					: List.of();
 			sourceDocumentPersistence.markIndexed(fileId, chunkIds);
 		} catch (Exception e) {
@@ -284,7 +284,17 @@ public class RagIngestService {
 
 	private void runPipeline(UUID handoverId, SourceDocument sourceDocument, byte[] fileBytes) {
 		try {
-			List<Document> rawDocuments = extractText(fileBytes, sourceDocument.getFileName());
+			List<Document> rawDocuments;
+			List<PdfTextLocation> locations = List.of();
+			if ("pdf".equals(extensionOf(sourceDocument.getFileName()))) {
+				PdfTextExtractor.Extraction pdf = PdfTextExtractor.extract(fileBytes);
+				if (pdf.text().isBlank()) throw new BusinessException(ErrorCode.AI_FILE_PARSE_FAILED);
+				rawDocuments = List.of(new Document(pdf.text()));
+				locations = pdf.locations();
+			} else {
+				rawDocuments = extractText(fileBytes, sourceDocument.getFileName());
+			}
+			sourceDocumentPersistence.saveLocations(sourceDocument.getId(), locations);
 			String extractedText = rawDocuments.stream()
 					.map(Document::getText)
 					.collect(Collectors.joining("\n\n"));
@@ -296,7 +306,7 @@ public class RagIngestService {
 			}
 
 			List<String> chunkIds = embed(
-					handoverId, sourceDocument.getId(), sourceDocument.getFileName(), rawDocuments);
+					handoverId, sourceDocument.getId(), sourceDocument.getFileName(), rawDocuments, locations);
 			sourceDocumentPersistence.markIndexed(sourceDocument.getId(), extractedText, chunkIds);
 		} catch (BusinessException e) {
 			sourceDocumentPersistence.markFailed(sourceDocument.getId());
@@ -337,7 +347,13 @@ public class RagIngestService {
 
 	/** 청크로 나눠 메타데이터를 붙이고 벡터스토어에 저장한다(= OpenAI 임베딩 호출). 저장된 청크 ID를 돌려준다. */
 	private List<String> embed(UUID handoverId, UUID sourceDocumentId, String fileName, List<Document> documents) {
-		List<Document> chunks = tokenTextSplitter.apply(documents);
+		return embed(handoverId, sourceDocumentId, fileName, documents, List.of());
+	}
+
+	private List<String> embed(UUID handoverId, UUID sourceDocumentId, String fileName, List<Document> documents,
+			List<PdfTextLocation> locations) {
+		String text = documents.stream().map(Document::getText).collect(Collectors.joining("\n\n"));
+		List<Document> chunks = EvidenceChunker.split(text, locations, tokenTextSplitter);
 		attachMetadata(chunks, handoverId, sourceDocumentId, fileName);
 		vectorStore.add(chunks);
 		return chunks.stream().map(Document::getId).toList();
@@ -350,6 +366,7 @@ public class RagIngestService {
 			chunk.getMetadata().put(META_SOURCE_DOCUMENT_ID, sourceDocumentId.toString());
 			chunk.getMetadata().put(META_FILE_NAME, fileName);
 			chunk.getMetadata().put(META_CHUNK_INDEX, i);
+			chunk.getMetadata().put("total_chunks", chunks.size());
 		}
 	}
 

@@ -43,7 +43,8 @@ public class ReadinessItemNormalizer {
 
 	private final ObjectMapper objectMapper;
 
-	public record SourceRef(UUID id, String fileName) {
+	public record SourceRef(UUID id, String fileName, String text, List<com.baton.ai.PdfTextLocation> locations) {
+		public SourceRef(UUID id, String fileName) { this(id, fileName, null, List.of()); }
 	}
 
 	public List<ReadinessItem> normalize(GeneratedAssessment assessment, HandoverDraftContent content,
@@ -56,8 +57,8 @@ public class ReadinessItemNormalizer {
 				}
 			}
 		}
-		Map<String, UUID> sourceIdByName = new LinkedHashMap<>();
-		sources.forEach(source -> sourceIdByName.putIfAbsent(source.fileName(), source.id()));
+		Map<String, SourceRef> sourceIdByName = new LinkedHashMap<>();
+		sources.forEach(source -> sourceIdByName.putIfAbsent(source.fileName(), source));
 
 		List<ReadinessItem> items = new ArrayList<>();
 		for (ReadinessArea area : ReadinessArea.values()) {
@@ -67,7 +68,7 @@ public class ReadinessItemNormalizer {
 	}
 
 	private ReadinessItem normalizeArea(ReadinessArea area, GeneratedAreaAssessment generated,
-			HandoverDraftContent content, Map<String, UUID> sourceIdByName) {
+			HandoverDraftContent content, Map<String, SourceRef> sourceIdByName) {
 		boolean empty = area == ReadinessArea.EVIDENCE
 				? sourceIdByName.isEmpty()
 				: DraftSection.allEmpty(content, area.getSections());
@@ -194,7 +195,7 @@ public class ReadinessItemNormalizer {
 		return false;
 	}
 
-	private List<ReadinessEvidence> evidence(List<GeneratedEvidence> generated, Map<String, UUID> sourceIdByName) {
+	private List<ReadinessEvidence> evidence(List<GeneratedEvidence> generated, Map<String, SourceRef> sourceIdByName) {
 		if (generated == null) {
 			return List.of();
 		}
@@ -204,12 +205,15 @@ public class ReadinessItemNormalizer {
 				continue;
 			}
 			String fileName = evidence.fileName().strip();
-			UUID sourceId = sourceIdByName.get(fileName);
-			if (sourceId == null) {
+			SourceRef source = sourceIdByName.get(fileName);
+			if (source == null) {
 				continue;
 			}
 			String locator = blankToNull(evidence.locator());
-			unique.putIfAbsent(fileName + "|" + locator, new ReadinessEvidence(sourceId, fileName, locator));
+			var located = com.baton.ai.EvidenceLocator.locate(source.text(), evidence.quote(), source.locations());
+			unique.putIfAbsent(fileName + "|" + locator + "|" + located.quote(), new ReadinessEvidence(
+					source.id(), fileName, located.page() == null ? locator : located.page() + "페이지",
+					located.page(), located.quote(), located.highlights()));
 		}
 		return List.copyOf(unique.values());
 	}

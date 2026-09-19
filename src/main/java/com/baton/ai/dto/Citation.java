@@ -2,6 +2,7 @@ package com.baton.ai.dto;
 
 import java.time.Instant;
 import java.util.UUID;
+import java.util.List;
 
 /**
  * AI 답변의 근거 한 건. 프론트는 이걸로 근거 배지를 그리고, 원문/첨부 파일로 이동한다.
@@ -18,5 +19,15 @@ public record Citation(
 		UUID fileId,
 		Instant updatedAt,
 		String type,
-		String url) {
+		String url,
+		Integer page,
+		String quote,
+		List<EvidenceHighlight> highlights) {
+	public Citation {
+		highlights = highlights == null ? List.of() : List.copyOf(highlights);
+	}
+
+	public Citation(UUID sourceId, String title, String locator, UUID fileId, Instant updatedAt, String type, String url) {
+		this(sourceId, title, locator, fileId, updatedAt, type, url, null, null, List.of());
+	}
 }

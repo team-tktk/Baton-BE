@@ -83,7 +83,10 @@ public class ReadinessFixService {
 	private String analysisModel;
 
 	/** 자료 검색으로 찾은 발췌 한 건. number는 프롬프트에서 AI가 근거로 가리키는 번호. */
-	record Excerpt(int number, UUID sourceId, String fileName, String locator, String text) {
+	record Excerpt(int number, UUID sourceId, String fileName, String locator, String text, ReadinessEvidence evidence) {
+		Excerpt(int number, UUID sourceId, String fileName, String locator, String text) {
+			this(number, sourceId, fileName, locator, text, new ReadinessEvidence(sourceId, fileName, locator));
+		}
 	}
 
 	/** 보완안 만들기에 필요한 값(트랜잭션 안에서 모아 둔다). */
@@ -434,30 +437,27 @@ public class ReadinessFixService {
 		if (unique.isEmpty()) {
 			return List.of();
 		}
-		Map<UUID, String> fileNames = transactionTemplate.execute(status ->
-				sourceDocumentRepository.findAllByHandoverId(handoverId).stream()
-						.collect(Collectors.toMap(SourceDocument::getId, SourceDocument::getFileName)));
-
-		List<Excerpt> excerpts = new ArrayList<>();
-		for (Document match : unique.values()) {
-			Object rawId = match.getMetadata().get("sourceDocumentId");
-			UUID sourceId = rawId == null ? null : UUID.fromString(rawId.toString());
-			String fileName = sourceId == null ? null : fileNames.get(sourceId);
-			if (fileName == null || excerpts.size() >= MAX_EXCERPTS) {
-				continue;
+		return transactionTemplate.execute(status -> {
+			Map<UUID, SourceDocument> sources = sourceDocumentRepository.findAllByHandoverId(handoverId).stream()
+					.filter(source -> source.isEnabled() && source.getStatus() == com.baton.ai.SourceDocumentStatus.INDEXED)
+					.collect(Collectors.toMap(SourceDocument::getId, Function.identity()));
+			List<Excerpt> excerpts = new ArrayList<>();
+			for (Document match : unique.values()) {
+				Object rawId = match.getMetadata().get("sourceDocumentId");
+				if (rawId == null || excerpts.size() >= MAX_EXCERPTS) continue;
+				UUID sourceId;
+				try { sourceId = UUID.fromString(rawId.toString()); }
+				catch (IllegalArgumentException e) { continue; }
+				SourceDocument source = sources.get(sourceId);
+				if (source == null || source.getChunkIds() == null || !source.getChunkIds().contains(match.getId())) continue;
+				var citation = com.baton.ai.EvidenceCitations.fromMatch(source, match);
+				var evidence = new ReadinessEvidence(sourceId, source.getFileName(), citation.locator(),
+						citation.page(), citation.quote(), citation.highlights());
+				excerpts.add(new Excerpt(excerpts.size() + 1, sourceId, source.getFileName(),
+						citation.locator(), match.getText(), evidence));
 			}
-			excerpts.add(new Excerpt(excerpts.size() + 1, sourceId, fileName, locator(match), match.getText()));
-		}
-		return excerpts;
-	}
-
-	private static String locator(Document match) {
-		Object chunkIndex = match.getMetadata().get("chunkIndex");
-		Object totalChunks = match.getMetadata().get("total_chunks");
-		if (chunkIndex == null || totalChunks == null) {
-			return null;
-		}
-		return "청크 %d/%s".formatted(Integer.parseInt(chunkIndex.toString()) + 1, totalChunks);
+			return excerpts;
+		});
 	}
 
 	private static String describeExcerpts(List<Excerpt> excerpts) {
@@ -481,7 +481,7 @@ public class ReadinessFixService {
 			Excerpt excerpt = number == null ? null : byNumber.get(number);
 			if (excerpt != null) {
 				unique.putIfAbsent(excerpt.sourceId() + "|" + excerpt.locator(),
-						new ReadinessEvidence(excerpt.sourceId(), excerpt.fileName(), excerpt.locator()));
+						excerpt.evidence());
 			}
 		}
 		return List.copyOf(unique.values());

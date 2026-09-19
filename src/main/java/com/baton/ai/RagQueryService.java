@@ -1,7 +1,6 @@
 package com.baton.ai;
 
 import java.time.Instant;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -51,7 +50,8 @@ public class RagQueryService {
 
 	@Transactional
 	public ChatAnswerResponse answer(UUID handoverId, UUID askedBy, String question) {
-		List<Document> matches = search(handoverId, question);
+		List<Document> matches = search(handoverId, question).stream()
+				.filter(match -> currentSource(handoverId, match) != null).toList();
 
 		if (matches.isEmpty()) {
 			return fallbackToGeneralKnowledge(handoverId, askedBy, question);
@@ -68,7 +68,7 @@ public class RagQueryService {
 		}
 
 		ChatMessage saved = chatMessageRepository.save(ChatMessage.create(
-				handoverId, askedBy, question, answer.trim(), true, buildCitations(matches)));
+				handoverId, askedBy, question, answer.trim(), true, buildCitations(handoverId, matches)));
 		return ChatAnswerResponse.from(saved);
 	}
 
@@ -155,46 +155,25 @@ public class RagQueryService {
 				.content();
 	}
 
-	/** 같은 문서에서 나온 청크는 하나의 근거로 묶는다(가장 먼저 매칭된 청크의 위치를 locator로 남긴다). */
-	private List<Citation> buildCitations(List<Document> matches) {
-		Map<UUID, Citation> citationsBySourceId = new LinkedHashMap<>();
-
-		for (Document match : matches) {
-			Object rawId = match.getMetadata().get("sourceDocumentId");
-			if (rawId == null) {
-				continue;
-			}
-			UUID sourceDocumentId = UUID.fromString(rawId.toString());
-
-			citationsBySourceId.computeIfAbsent(sourceDocumentId, id ->
-					sourceDocumentRepository.findById(id)
-							.map(sourceDocument -> toCitation(sourceDocument, match))
-							.orElse(null));
-		}
-
-		citationsBySourceId.values().removeIf(Objects::isNull);
-		return List.copyOf(citationsBySourceId.values());
+	/** Preserve different excerpts from the same PDF for previous/next navigation. */
+	private List<Citation> buildCitations(UUID handoverId, List<Document> matches) {
+		return matches.stream().map(match -> {
+			SourceDocument source = currentSource(handoverId, match);
+			return source == null ? null : EvidenceCitations.fromMatch(source, match);
+		}).filter(Objects::nonNull).distinct().toList();
 	}
 
-	private Citation toCitation(SourceDocument sourceDocument, Document match) {
-		return new Citation(
-				sourceDocument.getId(),
-				sourceDocument.getFileName(),
-				buildLocator(match),
-				sourceDocument.getSourceType() == SourceType.FILE ? sourceDocument.getId() : null,
-				sourceDocument.getUpdatedAt() != null ? sourceDocument.getUpdatedAt() : Instant.now(),
-				sourceDocument.getSourceType().name(),
-				sourceDocument.getOriginalUrl());
-	}
-
-	/** 벡터 청크 메타데이터의 chunkIndex/total_chunks로 문서 내 대략적인 위치를 표시한다. */
-	private String buildLocator(Document match) {
-		Object chunkIndex = match.getMetadata().get("chunkIndex");
-		Object totalChunks = match.getMetadata().get("total_chunks");
-		if (chunkIndex == null || totalChunks == null) {
+	private SourceDocument currentSource(UUID handoverId, Document match) {
+		Object rawId = match.getMetadata().get("sourceDocumentId");
+		if (rawId == null) return null;
+		try {
+			return sourceDocumentRepository.findById(UUID.fromString(rawId.toString()))
+					.filter(source -> handoverId.equals(source.getHandoverId()) && source.isEnabled()
+							&& source.getStatus() == SourceDocumentStatus.INDEXED
+							&& source.getChunkIds() != null && source.getChunkIds().contains(match.getId()))
+					.orElse(null);
+		} catch (IllegalArgumentException e) {
 			return null;
 		}
-		int index = Integer.parseInt(chunkIndex.toString());
-		return "청크 %d/%s".formatted(index + 1, totalChunks);
 	}
 }
