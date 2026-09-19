@@ -116,11 +116,20 @@ public class SourceDocumentPersistence {
 	@Transactional(readOnly = true)
 	public IndexingSource readForIndexing(UUID sourceDocumentId) {
 		return sourceDocumentRepository.findById(sourceDocumentId)
-				.map(doc -> new IndexingSource(doc.getFileName(), doc.getExtractedText(), doc.isEnabled()))
+				.map(doc -> new IndexingSource(doc.getFileName(), doc.getExtractedText(), doc.isEnabled(), doc.getPdfTextLocations()))
 				.orElseThrow(() -> new BusinessException(ErrorCode.AI_SOURCE_DOCUMENT_NOT_FOUND));
 	}
 
-	public record IndexingSource(String fileName, String text, boolean enabled) {
+	public record IndexingSource(String fileName, String text, boolean enabled, List<PdfTextLocation> locations) {
+		public IndexingSource(String fileName, String text, boolean enabled) {
+			this(fileName, text, enabled, List.of());
+		}
+	}
+
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public void saveLocations(UUID sourceId, List<PdfTextLocation> locations) {
+		sourceDocumentRepository.findById(sourceId).orElseThrow(
+				() -> new BusinessException(ErrorCode.AI_SOURCE_DOCUMENT_NOT_FOUND)).setPdfTextLocations(locations);
 	}
 
 	@Transactional(propagation = Propagation.REQUIRES_NEW)

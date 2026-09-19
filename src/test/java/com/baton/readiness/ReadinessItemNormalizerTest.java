@@ -32,6 +32,25 @@ class ReadinessItemNormalizerTest {
 	private final ReadinessItemNormalizer normalizer = new ReadinessItemNormalizer(new ObjectMapper());
 
 	@Test
+	void validatesGeneratedQuoteBeforeReturningPdfCoordinates() {
+		String text = "Refund approval requires the team lead.";
+		var box = new com.baton.ai.dto.EvidenceHighlight(3, .1, .2, .5, .03);
+		var source = new SourceRef(CHECKLIST_ID, "manual.pdf", text,
+				List.of(new com.baton.ai.PdfTextLocation(0, text.length(), 3, box)));
+		var generated = new GeneratedAreaAssessment(ReadinessArea.EXCEPTION, ReadinessStatus.PARTIAL,
+				List.of(DraftSection.RULES_AND_EXCEPTIONS), null, "Check approval", "Confirm the owner",
+				List.of(new GeneratedEvidence("manual.pdf", "unknown", text),
+						new GeneratedEvidence("manual.pdf", "invented", "Anyone may approve refunds.")), List.of());
+		var item = find(normalizer.normalize(new GeneratedAssessment(List.of(generated)), CONTENT, List.of(source)),
+				ReadinessArea.EXCEPTION);
+		assertThat(item.evidence().getFirst().page()).isEqualTo(3);
+		assertThat(item.evidence().getFirst().quote()).isEqualTo(text);
+		assertThat(item.evidence().getFirst().highlights()).containsExactly(box);
+		assertThat(item.evidence().get(1).quote()).isNull();
+		assertThat(item.evidence().get(1).highlights()).isEmpty();
+	}
+
+	@Test
 	void returnsOneItemPerAreaInDefinitionOrder() {
 		List<ReadinessItem> items = normalizer.normalize(null, CONTENT, SOURCES);
 

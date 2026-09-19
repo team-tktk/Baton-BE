@@ -92,6 +92,14 @@ public class SourceDocument {
 	@Column(name = "chunk_ids")
 	private List<String> chunkIds;
 
+	@JdbcTypeCode(SqlTypes.JSON)
+	@Column(name = "pdf_text_locations")
+	private List<PdfTextLocation> pdfTextLocations;
+
+	public void setPdfTextLocations(List<PdfTextLocation> locations) {
+		this.pdfTextLocations = List.copyOf(locations);
+	}
+
 	/** 사용자가 마스킹 검수를 확정한 시각. 검수 없이 처리된 파일(기능 도입 전, 검수 꺼짐)은 null. */
 	@Column(name = "masking_confirmed_at")
 	private Instant maskingConfirmedAt;

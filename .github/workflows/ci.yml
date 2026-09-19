@@ -55,3 +55,13 @@ jobs:
           --tests 'com.baton.ai.RagIngestServiceMaskingTest'
           --tests 'com.baton.ai.RagIngestServiceQuotaTest'
           --no-daemon
+
+      - name: PDF evidence unit tests
+        run: >-
+          ./gradlew test
+          --tests 'com.baton.ai.PdfEvidenceTest'
+          --tests 'com.baton.ai.EvidenceAccessTest'
+          --tests 'com.baton.masking.MaskingEvidenceTest'
+          --tests 'com.baton.readiness.ReadinessItemNormalizerTest'
+          --tests 'com.baton.readiness.ReadinessFixTest'
+          --no-daemon

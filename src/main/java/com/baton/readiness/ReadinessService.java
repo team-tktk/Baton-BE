@@ -210,7 +210,7 @@ public class ReadinessService {
 		List<SourceDocument> sources = indexedSources(handoverId);
 		String hash = contentHash(ReadinessRubrics.CURRENT.version(), draft.getContent(), sources);
 		List<SourceRef> sourceRefs = sources.stream()
-				.map(source -> new SourceRef(source.getId(), source.getFileName()))
+				.map(source -> new SourceRef(source.getId(), source.getFileName(), source.getExtractedText(), source.getPdfTextLocations()))
 				.toList();
 		return new Snapshot(handoverId, draft.getContent(), draft.getRevision(), sourceRefs,
 				describeSources(sources), documentsText(sources), hash);

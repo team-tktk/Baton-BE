@@ -46,7 +46,10 @@ public class MaskingConfirmation {
 		}
 
 		Long rawTextOid = largeObjectCleaner.extractedTextOid(fileId);
-		document.confirmMasking(MaskingApplier.apply(document.getExtractedText(), candidates));
+		MaskingApplier.Result masked = MaskingApplier.applyWithLocations(
+				document.getExtractedText(), candidates, document.getPdfTextLocations());
+		document.setPdfTextLocations(masked.locations());
+		document.confirmMasking(masked.text());
 		sourceDocumentRepository.saveAndFlush(document);
 		largeObjectCleaner.unlinkIfReplaced(fileId, rawTextOid);
 	}
