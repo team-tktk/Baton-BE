@@ -3,6 +3,7 @@ package com.baton.ai.dto;
 import java.util.List;
 
 import com.baton.ai.ClarificationQuestionType;
+import com.baton.ai.DraftSection;
 import com.fasterxml.jackson.annotation.JsonPropertyDescription;
 
 public record GeneratedQuestion(
@@ -15,5 +16,9 @@ public record GeneratedQuestion(
 		@JsonPropertyDescription("파일명과 핵심 값만 1줄 요약(예: \"A.pdf: 마감 9/30 ↔ B.xlsx: 마감 10/5\"). 원문을 통째로 인용하지 말 것")
 		String evidence,
 		@JsonPropertyDescription("객관식 선택지(자료에 근거가 있으면 2~4개). 근거로 삼을 값이 없으면 빈 배열로 두고 자유 답변으로 받으세요 — 자료에 없는 선택지를 지어내지 마세요")
-		List<QuestionOption> options) {
+		List<QuestionOption> options,
+		@JsonPropertyDescription("이 질문의 답이 반영될 문서 섹션 1~2개. 답을 받으면 실제로 내용이 바뀌는 섹션만 고르세요")
+		List<DraftSection> targetSections,
+		@JsonPropertyDescription("중요도 순위. 1이 가장 중요. 업무를 이어받는 데 모르면 가장 큰 문제가 생기는 질문일수록 작은 숫자")
+		Integer priority) {
 }

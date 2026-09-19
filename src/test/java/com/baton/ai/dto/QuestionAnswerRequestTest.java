@@ -6,6 +6,8 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import com.baton.ai.ClarificationQuestionStatus;
+
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
 import jakarta.validation.ValidatorFactory;
@@ -28,17 +30,21 @@ class QuestionAnswerRequestTest {
 
 	@Test
 	void acceptsDirectAnswer() {
-		assertThat(validator.validate(new QuestionAnswerRequest("팀장에게 먼저 확인", false))).isEmpty();
+		assertThat(validator.validate(new QuestionAnswerRequest(ClarificationQuestionStatus.ANSWERED, "팀장에게 먼저 확인"))).isEmpty();
 	}
 
 	@Test
-	void acceptsSkipWithoutAnswer() {
-		assertThat(validator.validate(new QuestionAnswerRequest(null, true))).isEmpty();
+	void acceptsUnknownNotApplicableAndDeferredWithoutAnswer() {
+		assertThat(validator.validate(new QuestionAnswerRequest(ClarificationQuestionStatus.UNKNOWN, null))).isEmpty();
+		assertThat(validator.validate(new QuestionAnswerRequest(ClarificationQuestionStatus.NOT_APPLICABLE, null))).isEmpty();
+		assertThat(validator.validate(new QuestionAnswerRequest(ClarificationQuestionStatus.DEFERRED, null))).isEmpty();
 	}
 
 	@Test
-	void rejectsMissingAnswerAndSkipWithAnswer() {
-		assertThat(validator.validate(new QuestionAnswerRequest(" ", false))).isNotEmpty();
-		assertThat(validator.validate(new QuestionAnswerRequest("답변", true))).isNotEmpty();
+	void rejectsInvalidCombinations() {
+		assertThat(validator.validate(new QuestionAnswerRequest(ClarificationQuestionStatus.ANSWERED, " "))).isNotEmpty();
+		assertThat(validator.validate(new QuestionAnswerRequest(ClarificationQuestionStatus.UNKNOWN, "답변"))).isNotEmpty();
+		assertThat(validator.validate(new QuestionAnswerRequest(ClarificationQuestionStatus.PENDING, null))).isNotEmpty();
+		assertThat(validator.validate(new QuestionAnswerRequest(null, "답변"))).isNotEmpty();
 	}
 }

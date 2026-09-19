@@ -19,6 +19,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import com.baton.ai.ClarificationQuestion;
+import com.baton.ai.ClarificationQuestionRepository;
+import com.baton.ai.ClarificationQuestionStatus;
 import com.baton.ai.DraftSection;
 import com.baton.ai.HandoverDraft;
 import com.baton.ai.HandoverDraftRepository;
@@ -29,6 +32,7 @@ import com.baton.ai.dto.HandoverDraftContent;
 import com.baton.common.BusinessException;
 import com.baton.common.ErrorCode;
 import com.baton.readiness.ReadinessItemNormalizer.SourceRef;
+import com.baton.readiness.dto.DeferredQuestionResponse;
 import com.baton.readiness.dto.GeneratedAssessment;
 import com.baton.readiness.dto.ReadinessResponse;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -57,6 +61,7 @@ public class ReadinessService {
 	private final ChatClient chatClient;
 	private final ObjectMapper objectMapper;
 	private final TransactionTemplate transactionTemplate;
+	private final ClarificationQuestionRepository clarificationQuestionRepository;
 
 	@Value("${app.ai.analysis-model:gpt-5.4}")
 	private String analysisModel;
@@ -127,7 +132,23 @@ public class ReadinessService {
 	ReadinessResponse toResponse(ReadinessEvaluation evaluation, boolean stale) {
 		ReadinessRubric rubric = ReadinessRubrics.find(evaluation.getRubricVersion())
 				.orElseThrow(() -> new IllegalStateException("알 수 없는 평가 기준 버전: " + evaluation.getRubricVersion()));
-		return ReadinessResponse.of(evaluation, rubric, stale);
+		return ReadinessResponse.of(evaluation, rubric, stale, deferredQuestions(evaluation.getHandoverId()));
+	}
+
+	/** "나중에 답하기"로 미룬 확인 질문을 중요도순으로. 평가 결과와 달리 매번 현재 상태로 읽는다(답하면 바로 빠진다). */
+	private List<DeferredQuestionResponse> deferredQuestions(UUID handoverId) {
+		return clarificationQuestionRepository
+				.findAllByHandoverIdAndStatus(handoverId, ClarificationQuestionStatus.DEFERRED).stream()
+				.sorted(Comparator.comparing((ClarificationQuestion q) -> q.getPriority() == null ? Integer.MAX_VALUE : q.getPriority())
+						.thenComparing(ClarificationQuestion::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())))
+				.map(q -> DeferredQuestionResponse.from(q, areaOf(q)))
+				.toList();
+	}
+
+	/** 첫 번째 반영 위치가 속한 영역. 반영 위치가 없던 옛 질문은 예외 대응(확인 질문의 기본 반영 위치)으로 본다. */
+	static ReadinessArea areaOf(ClarificationQuestion question) {
+		List<DraftSection> sections = question.getTargetSections();
+		return ReadinessArea.of(sections.isEmpty() ? DraftSection.RULES_AND_EXCEPTIONS : sections.get(0));
 	}
 
 	private Optional<ReadinessEvaluation> findCurrent(UUID handoverId, String hash) {

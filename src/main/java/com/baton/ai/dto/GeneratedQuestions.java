@@ -9,7 +9,7 @@ import com.fasterxml.jackson.annotation.JsonPropertyDescription;
  * 초안은 답변을 받은 뒤 별도로(페이지 병렬) 생성한다.
  */
 public record GeneratedQuestions(
-		@JsonPropertyDescription("인계자에게 물어볼 확인 질문. 반드시 최소 1개 이상(빈 배열 금지). "
-				+ "자료 간 값이 충돌하거나 충돌 가능성이 조금이라도(약 30%↑) 의심되면 반드시 CONFLICT로 포함. 보통 1~6개")
+		@JsonPropertyDescription("인계자에게 물어볼 확인 질문. 중요한 것만 최대 5개. 자료에 답이 있는 질문, 이미 물어본 질문과 같은 뜻의 질문은 넣지 말 것. "
+				+ "자료 간 값이 충돌하거나 충돌 가능성이 조금이라도(약 30%↑) 의심되면 CONFLICT로 포함")
 		List<GeneratedQuestion> questions) {
 }

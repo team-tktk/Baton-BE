@@ -11,5 +11,9 @@ public interface ClarificationQuestionRepository extends JpaRepository<Clarifica
 
 	List<ClarificationQuestion> findAllByHandoverIdAndType(UUID handoverId, ClarificationQuestionType type);
 
+	List<ClarificationQuestion> findAllByHandoverIdAndStatus(UUID handoverId, ClarificationQuestionStatus status);
+
 	void deleteAllByHandoverId(UUID handoverId);
+
+	void deleteAllByHandoverIdAndStatus(UUID handoverId, ClarificationQuestionStatus status);
 }

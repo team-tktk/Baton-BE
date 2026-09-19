@@ -27,7 +27,7 @@ public class AnalysisJobDispatcher {
 			// 분석 단계는 질문만 생성한다(빠름). 초안은 답변 후 completeQuestions에서 페이지 병렬로 만든다.
 			RagAnalysisService.AnalysisExecutionResult result = ragAnalysisService.analyze(event.handoverId());
 
-			analysisJobService.complete(event.jobId(), event.handoverId(), result.questionCount() > 0);
+			analysisJobService.complete(event.jobId(), event.handoverId(), result.needsAnswering());
 		} catch (Exception e) {
 			log.error("[*] Analysis job failed: jobId={}, handoverId={}", event.jobId(), event.handoverId(), e);
 			analysisJobService.fail(event.jobId(), event.handoverId(), safeMessage(e));
