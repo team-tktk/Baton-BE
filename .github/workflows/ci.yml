@@ -60,6 +60,7 @@ jobs:
         run: >-
           ./gradlew test
           --tests 'com.baton.ai.PdfEvidenceTest'
+          --tests 'com.baton.ai.PdfEvidenceVisualTest'
           --tests 'com.baton.ai.EvidenceAccessTest'
           --tests 'com.baton.masking.MaskingEvidenceTest'
           --tests 'com.baton.readiness.ReadinessItemNormalizerTest'
