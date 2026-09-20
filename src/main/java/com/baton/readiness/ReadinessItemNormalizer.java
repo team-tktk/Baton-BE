@@ -49,6 +49,12 @@ public class ReadinessItemNormalizer {
 
 	public List<ReadinessItem> normalize(GeneratedAssessment assessment, HandoverDraftContent content,
 			List<SourceRef> sources) {
+		return normalize(assessment, content, sources, List.of(ReadinessArea.values()));
+	}
+
+	/** areas: 평가 기준이 평가하는 영역. 그 밖의 영역은 AI가 결과를 냈더라도 버린다. */
+	public List<ReadinessItem> normalize(GeneratedAssessment assessment, HandoverDraftContent content,
+			List<SourceRef> sources, List<ReadinessArea> areas) {
 		Map<ReadinessArea, GeneratedAreaAssessment> byArea = new EnumMap<>(ReadinessArea.class);
 		if (assessment != null && assessment.areas() != null) {
 			for (GeneratedAreaAssessment generated : assessment.areas()) {
@@ -61,7 +67,7 @@ public class ReadinessItemNormalizer {
 		sources.forEach(source -> sourceIdByName.putIfAbsent(source.fileName(), source));
 
 		List<ReadinessItem> items = new ArrayList<>();
-		for (ReadinessArea area : ReadinessArea.values()) {
+		for (ReadinessArea area : areas) {
 			items.add(normalizeArea(area, byArea.get(area), content, sourceIdByName));
 		}
 		return items;

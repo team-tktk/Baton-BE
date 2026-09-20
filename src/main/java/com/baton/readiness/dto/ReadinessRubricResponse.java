@@ -26,7 +26,7 @@ public record ReadinessRubricResponse(
 	}
 
 	public static ReadinessRubricResponse from(ReadinessRubric rubric) {
-		List<AreaCriterion> areas = List.of(ReadinessArea.values()).stream()
+		List<AreaCriterion> areas = rubric.areas().stream()
 				.map(area -> new AreaCriterion(area, area.getLabel(), rubric.criteria().get(area),
 						rubric.weight(area), area.getSections()))
 				.toList();

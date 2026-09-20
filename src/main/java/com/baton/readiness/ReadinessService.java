@@ -4,7 +4,6 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Comparator;
-import java.util.EnumSet;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
@@ -112,8 +111,8 @@ public class ReadinessService {
 		}
 
 		ReadinessRubric rubric = ReadinessRubrics.CURRENT;
-		GeneratedAssessment generated = generateAssessment(snapshot, rubric, EnumSet.allOf(ReadinessArea.class));
-		List<ReadinessItem> items = normalizer.normalize(generated, snapshot.content(), snapshot.sources());
+		GeneratedAssessment generated = generateAssessment(snapshot, rubric, Set.copyOf(rubric.areas()));
+		List<ReadinessItem> items = normalizer.normalize(generated, snapshot.content(), snapshot.sources(), rubric.areas());
 
 		return transactionTemplate.execute(status -> evaluationRepository.save(ReadinessEvaluation.create(
 				handoverId, rubric, snapshot.hash(), snapshot.revision(), items)));
@@ -123,7 +122,7 @@ public class ReadinessService {
 	 * 보완안 적용 뒤 재평가. 바뀐 섹션이 걸린 영역(areas)만 AI로 다시 평가하고, 나머지 영역은 직전 평가(base) 결과를 그대로 쓴다
 	 * — 고치지 않은 영역의 상태가 흔들려 오른 점수를 상쇄하지 않게. 직전 평가가 없거나 평가 기준 버전이 다르면 전체를 평가한다.
 	 */
-	public ReadinessResponse reevaluate(UUID handoverId, UUID baseEvaluationId, Set<ReadinessArea> areas) {
+	public ReadinessResponse reevaluate(UUID handoverId, UUID baseEvaluationId, Set<ReadinessArea> affected) {
 		Snapshot snapshot = transactionTemplate.execute(status -> snapshot(handoverId));
 		Optional<ReadinessEvaluation> cached = transactionTemplate.execute(
 				status -> findCurrent(handoverId, snapshot.hash()));
@@ -131,6 +130,8 @@ public class ReadinessService {
 			return toResponseInTransaction(cached.get(), false);
 		}
 		ReadinessRubric rubric = ReadinessRubrics.CURRENT;
+		// 바뀐 섹션이 지금은 평가하지 않는 영역에만 걸려 있을 수 있다(예: 확인된 업무 기준 → 근거와 최신성).
+		Set<ReadinessArea> areas = affected.stream().filter(rubric::evaluates).collect(Collectors.toSet());
 		Optional<ReadinessEvaluation> base = transactionTemplate.execute(status -> evaluationRepository.findById(baseEvaluationId))
 				.filter(evaluation -> evaluation.getRubricVersion().equals(rubric.version()));
 		if (base.isEmpty() || areas.isEmpty()) {
@@ -138,7 +139,8 @@ public class ReadinessService {
 		}
 
 		GeneratedAssessment generated = generateAssessment(snapshot, rubric, areas);
-		List<ReadinessItem> fresh = normalizer.normalize(generated, snapshot.content(), snapshot.sources());
+		List<ReadinessItem> fresh = normalizer.normalize(generated, snapshot.content(), snapshot.sources(),
+				rubric.areas());
 		List<ReadinessItem> items = mergeItems(base.get(), fresh, areas);
 
 		ReadinessEvaluation saved = transactionTemplate.execute(status -> evaluationRepository.save(ReadinessEvaluation.create(
@@ -171,7 +173,11 @@ public class ReadinessService {
 	ReadinessResponse toResponse(ReadinessEvaluation evaluation, boolean stale) {
 		ReadinessRubric rubric = ReadinessRubrics.find(evaluation.getRubricVersion())
 				.orElseThrow(() -> new IllegalStateException("알 수 없는 평가 기준 버전: " + evaluation.getRubricVersion()));
-		return ReadinessResponse.of(evaluation, rubric, stale, deferredQuestions(evaluation.getHandoverId()));
+		// 평가하지 않는 영역(접근 권한 등)에 붙는 미룬 질문은 준비도 화면에 보일 곳이 없으니 뺀다. 확인 질문 화면에는 그대로 남는다.
+		List<DeferredQuestionResponse> deferred = deferredQuestions(evaluation.getHandoverId()).stream()
+				.filter(question -> rubric.evaluates(question.area()))
+				.toList();
+		return ReadinessResponse.of(evaluation, rubric, stale, deferred);
 	}
 
 	/**

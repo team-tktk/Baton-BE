@@ -59,8 +59,8 @@ public class OpenApiConfig {
 			- **MaskingOrigin**(마스킹 항목 출처): DETECTED(자동 탐지)·MANUAL(직접 추가)
 			- **ClarificationQuestionStatus**(확인 질문): PENDING(미응답)·ANSWERED(답변)·UNKNOWN(모름)·NOT_APPLICABLE(해당 없음)·DEFERRED(나중에 답하기)
 			- **ClarificationQuestionType**: INTERVIEW(추가 정보 인터뷰)·CONFLICT(문서 간 충돌 해소)
-			- **ReadinessArea**(준비도 평가 영역): SCOPE(업무 범위)·PROCEDURE(실행 절차)·COMPLETION(완료 기준)·EXCEPTION(예외 대응)·
-			  SCHEDULE(일정)·CONTACTS(담당자)·ACCESS(접근 권한)·EVIDENCE(근거와 최신성)
+			- **ReadinessArea**(준비도 평가 영역): SCOPE(업무 범위)·PROCEDURE(실행 절차)·PROGRESS(진행 현황)·PRIORITY(우선순위)·COMPLETION(완료 기준)·EXCEPTION(예외 대응)·
+			  SCHEDULE(일정)·CONTACTS(담당자). ACCESS(접근 권한)·EVIDENCE(근거와 최신성)는 평가 기준 v3부터 평가하지 않는다(예전 결과에만 남음)
 			- **ReadinessStatus**(영역 평가): SUFFICIENT(충분)·PARTIAL(일부 부족)·MISSING(누락)·CONFLICT(충돌)
 			- **ReadinessGrade**(전체 등급): READY(준비 완료)·NEEDS_IMPROVEMENT(보완 필요)·NOT_READY(준비 부족)
 			- **ReadinessFixStatus**(보완안): NEEDS_INPUT(수정안 없음 — 질문 답변 후 보완안 만들기 대기)·PROPOSED(수정안이 있는 영역이 하나 이상, 확인 대기)·APPLIED(적용됨)·DISCARDED(취소됨)

@@ -9,7 +9,8 @@ import java.util.Map;
  * 기준이 바뀌면 이 값을 고치지 말고 새 버전을 ReadinessRubrics에 추가한다 — 평가 결과마다 버전이 저장되므로
  * 예전 결과를 예전 기준으로 다시 읽을 수 있고, 같은 내용·같은 버전이면 같은 점수가 나온다.
  *
- * @param weights       영역별 배점. 합계 100.
+ * @param criteria      영역별 확인 내용. 여기 있는 영역만 이 버전에서 평가한다(빠진 영역은 평가·점수에서 제외).
+ * @param weights       영역별 배점. criteria와 같은 영역을 가지며 합계 100.
  * @param statusPercent 상태별로 배점의 몇 %를 인정할지(0~100).
  * @param readyScore    이 점수 이상이면 READY.
  * @param minimumScore  이 점수 이상이면 NEEDS_IMPROVEMENT, 미만이면 NOT_READY.
@@ -28,10 +29,8 @@ public record ReadinessRubric(
 		criteria = Map.copyOf(criteria);
 		weights = Map.copyOf(weights);
 		statusPercent = Map.copyOf(statusPercent);
-		for (ReadinessArea area : ReadinessArea.values()) {
-			if (!criteria.containsKey(area) || !weights.containsKey(area)) {
-				throw new IllegalArgumentException("평가 기준 " + version + "에 영역 " + area + "이(가) 빠졌습니다.");
-			}
+		if (criteria.isEmpty() || !criteria.keySet().equals(weights.keySet())) {
+			throw new IllegalArgumentException("평가 기준 " + version + "의 확인 내용과 배점의 영역이 다릅니다.");
 		}
 		for (ReadinessStatus status : ReadinessStatus.values()) {
 			if (!statusPercent.containsKey(status)) {
@@ -42,6 +41,15 @@ public record ReadinessRubric(
 		if (total != 100) {
 			throw new IllegalArgumentException("평가 기준 " + version + "의 배점 합계가 100이 아닙니다: " + total);
 		}
+	}
+
+	/** 이 버전에서 평가하는 영역(영역 정의 순서). */
+	public List<ReadinessArea> areas() {
+		return List.of(ReadinessArea.values()).stream().filter(criteria::containsKey).toList();
+	}
+
+	public boolean evaluates(ReadinessArea area) {
+		return criteria.containsKey(area);
 	}
 
 	public int weight(ReadinessArea area) {
@@ -61,7 +69,7 @@ public record ReadinessRubric(
 	/** 총점(0~100). 정수 연산 후 한 번만 반올림해 같은 입력이면 항상 같은 값이 나온다. */
 	public int score(Map<ReadinessArea, ReadinessStatus> statuses) {
 		long centiPoints = 0;
-		for (ReadinessArea area : ReadinessArea.values()) {
+		for (ReadinessArea area : areas()) {
 			centiPoints += (long) weight(area) * areaPercent(statusOf(statuses, area));
 		}
 		return (int) ((centiPoints + 50) / 100);
@@ -77,7 +85,7 @@ public record ReadinessRubric(
 
 	/** 모든 영역을 잃은 점수가 큰 순서로. */
 	public List<ReadinessArea> prioritized(Map<ReadinessArea, ReadinessStatus> statuses) {
-		return List.of(ReadinessArea.values()).stream()
+		return areas().stream()
 				.sorted(Comparator.comparingInt((ReadinessArea area) -> lostCentiPoints(area, statusOf(statuses, area)))
 						.reversed()
 						.thenComparing(Comparator.naturalOrder()))
