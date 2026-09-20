@@ -38,7 +38,7 @@ class ReadinessFixTest {
 			List.of(DraftSection.RECURRING_TASKS), List.of());
 
 	/** applyGeneration은 외부 의존성을 쓰지 않는다. */
-	private final ReadinessFixService service = new ReadinessFixService(null, null, null, null, null, null, null, null, null);
+	private final ReadinessFixService service = new ReadinessFixService(null, null, null, null, null, null, null, null, null, null);
 
 	@Test
 	void openCollectsEvaluationAndDeferredQuestionsPerArea() {

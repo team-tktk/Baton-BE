@@ -57,7 +57,7 @@ class RagAnalysisServiceCompleteTest {
 		when(transactionManager.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
 		service = new RagAnalysisService(sourceDocumentRepository, handoverDraftRepository,
 				clarificationQuestionRepository, chatClient, new ObjectMapper(), userRepository,
-				new TransactionTemplate(transactionManager), handoverRepository);
+				new TransactionTemplate(transactionManager), handoverRepository, null);
 		when(handoverRepository.findById(handoverId)).thenReturn(Optional.of(handover));
 	}
 

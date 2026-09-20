@@ -27,12 +27,13 @@ class ExternalSourceServiceTest {
 	@Mock SafeWebSourceFetcher webFetcher;
 	@Mock MaskingCandidateRepository maskingCandidateRepository;
 	@Mock LargeObjectCleaner largeObjectCleaner;
+	@Mock RagSourceVersionService versionService;
 	private ExternalSourceService service;
 
 	@BeforeEach
 	void setUp() {
 		service = new ExternalSourceService(repository, persistence, ragIngestService, webFetcher,
-				maskingCandidateRepository, largeObjectCleaner);
+				maskingCandidateRepository, largeObjectCleaner, versionService);
 	}
 
 	@Test

@@ -71,6 +71,7 @@ public class RagAnalysisService {
 	private final UserRepository userRepository;
 	private final TransactionTemplate transactionTemplate;
 	private final HandoverRepository handoverRepository;
+	private final RagSourceVersionService versionService;
 
 	/**
 	 * 인수인계 자료 생성 전용 모델(초안·질문·재생성). 품질이 중요한 이 경로만 좋은 모델을 쓰고,
@@ -181,6 +182,7 @@ public class RagAnalysisService {
 		if (baseRevision != null && baseRevision != draft.getRevision()) {
 			throw new BusinessException(ErrorCode.AI_DRAFT_REVISION_CONFLICT);
 		}
+		versionService.archive(draft);
 		draft.replaceContent(content);
 		return HandoverDraftResponse.from(draft);
 	}
@@ -203,6 +205,10 @@ public class RagAnalysisService {
 				.filter(q -> q.getHandoverId().equals(handoverId))
 				.orElseThrow(() -> new BusinessException(ErrorCode.AI_QUESTION_NOT_FOUND));
 
+		boolean answerChanges = question.getStatus() == ClarificationQuestionStatus.ANSWERED
+				&& (request.status() != ClarificationQuestionStatus.ANSWERED
+						|| !Objects.equals(question.getAnswer(), request.answer()));
+		if (answerChanges) versionService.archive(question);
 		if (request.status() == ClarificationQuestionStatus.ANSWERED) {
 			question.answer(request.answer());
 		} else {
@@ -246,6 +252,7 @@ public class RagAnalysisService {
 		return transactionTemplate.execute(status -> {
 			HandoverDraft draft = handoverDraftRepository.findByHandoverId(handoverId)
 					.orElseGet(() -> HandoverDraft.create(handoverId, content));
+			versionService.archive(draft);
 			draft.replaceContent(content);
 			handoverDraftRepository.save(draft);
 			markApplied(resolved);
@@ -291,6 +298,7 @@ public class RagAnalysisService {
 					.orElseThrow(() -> new BusinessException(ErrorCode.AI_DRAFT_NOT_FOUND));
 			if (patch != null) {
 				// AI 호출 중 사람이 고친 다른 섹션을 덮어쓰지 않도록, 저장 시점의 최신 content에 대상 섹션만 합친다.
+				versionService.archive(draft);
 				draft.replaceContent(DraftSection.merge(draft.getContent(), patch, sections));
 			}
 			markApplied(toApply);

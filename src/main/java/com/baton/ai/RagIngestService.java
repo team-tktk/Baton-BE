@@ -73,6 +73,7 @@ public class RagIngestService {
 	private final MaskingDetector maskingDetector;
 	private final MaskingCandidateRepository maskingCandidateRepository;
 	private final LargeObjectCleaner largeObjectCleaner;
+	private final RagSourceVersionService versionService;
 
 	@Value("${app.masking.enabled}")
 	private boolean maskingEnabled;
@@ -404,6 +405,7 @@ public class RagIngestService {
 			throw new BusinessException(ErrorCode.AI_SOURCE_DOCUMENT_PROCESSING);
 		}
 
+		versionService.archive(sourceDocument);
 		if (sourceDocument.getChunkIds() != null && !sourceDocument.getChunkIds().isEmpty()) {
 			vectorStore.delete(sourceDocument.getChunkIds());
 		}

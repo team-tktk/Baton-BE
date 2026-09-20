@@ -60,6 +60,8 @@ class RagIngestServiceConfirmTest {
 	private MaskingCandidateRepository maskingCandidateRepository;
 	@Mock
 	private LargeObjectCleaner largeObjectCleaner;
+	@Mock
+	private RagSourceVersionService versionService;
 
 	@Captor
 	private ArgumentCaptor<List<Document>> chunksCaptor;
@@ -73,7 +75,7 @@ class RagIngestServiceConfirmTest {
 	void setUp() {
 		service = new RagIngestService(sourceDocumentRepository, sourceDocumentPersistence,
 				vectorStore, TokenTextSplitter.builder().build(), s3FileStorage, entityManager, fileSignatureValidator,
-				handoverRepository, new MaskingDetector(), maskingCandidateRepository, largeObjectCleaner);
+				handoverRepository, new MaskingDetector(), maskingCandidateRepository, largeObjectCleaner, versionService);
 		handoverId = UUID.randomUUID();
 		fileId = UUID.randomUUID();
 		document = SourceDocument.create(handoverId, "contract.docx", "application/zip", 100, "s3-key");
@@ -142,6 +144,7 @@ class RagIngestServiceConfirmTest {
 
 		service.delete(handoverId, fileId);
 
+		verify(versionService).archive(document);
 		InOrder order = inOrder(sourceDocumentRepository, largeObjectCleaner);
 		order.verify(sourceDocumentRepository).delete(document);
 		order.verify(sourceDocumentRepository).flush();
