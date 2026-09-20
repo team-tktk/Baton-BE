@@ -100,7 +100,7 @@ public class ReadinessController {
 						@ExampleObject(name = "보완 필요(영역은 2개만 표시, 실제로는 8개)", value = """
 								{
 								  "evaluationId": "7f1c2a3b-...",
-								  "rubricVersion": "v2",
+								  "rubricVersion": "v4",
 								  "score": 59,
 								  "grade": "NEEDS_IMPROVEMENT",
 								  "gradeLabel": "보완 필요",
@@ -193,7 +193,7 @@ public class ReadinessController {
 					schema = @Schema(implementation = CreateFixRequest.class),
 					examples = {
 						@ExampleObject(name = "중요한 확인 3개를 한 번에", value = """
-								{ "areas": ["EXCEPTION", "PROCEDURE", "ACCESS"] }
+								{ "areas": ["EXCEPTION", "PROCEDURE", "CONTACTS"] }
 								""")
 					})),
 			responses = @ApiResponse(responseCode = "201", description = "성공", content = @Content(
@@ -345,11 +345,11 @@ public class ReadinessController {
 								      ]
 								    },
 								    {
-								      "area": "ACCESS", "areaLabel": "접근 권한", "status": "MISSING", "statusLabel": "누락",
-								      "sections": [ { "section": "ACCESS_ACCOUNTS", "field": "accessAccounts", "label": "접근 권한과 계정" } ],
+								      "area": "CONTACTS", "areaLabel": "담당자", "status": "MISSING", "statusLabel": "누락",
+								      "sections": [ { "section": "STAKEHOLDERS", "field": "stakeholders", "label": "주요 관계자" } ],
 								      "proposed": false, "changeSummary": null, "evidence": [],
 								      "questions": [
-								        { "id": "q2", "area": "ACCESS", "question": "운영툴 관리자 권한은 누가 발급하나요?", "reason": "자료에 발급 절차가 없어요",
+								        { "id": "q2", "area": "CONTACTS", "question": "프로모션 결과는 누구에게 보고하나요?", "reason": "자료에 보고 대상이 없어요",
 								          "options": [], "clarificationQuestionId": null, "answer": null }
 								      ]
 								    }

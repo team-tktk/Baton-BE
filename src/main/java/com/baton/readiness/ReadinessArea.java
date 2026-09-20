@@ -6,11 +6,16 @@ import com.baton.ai.DraftSection;
 
 /**
  * 준비도 평가 영역. sections는 이 영역의 내용이 담기는 문서 섹션이고, 첫 번째가 보완안의 기본 수정 위치다.
- * 영역별 확인 내용(평가 기준)과 배점은 버전이 있는 ReadinessRubric에서 관리한다.
+ * 영역별 확인 내용(평가 기준)과 배점, 그 버전에서 실제로 평가하는 영역은 버전이 있는 ReadinessRubric에서 관리한다.
+ * ACCESS·EVIDENCE는 v3부터 평가하지 않지만, 예전 평가 결과·보완안을 읽어야 하므로 값은 남겨 둔다.
+ * PROGRESS·PRIORITY는 v4에서 추가했다. 값은 이름(문자열)으로 저장되므로 순서를 바꿔도 예전 데이터는 그대로 읽힌다.
  */
 public enum ReadinessArea {
 	SCOPE("업무 범위", List.of(DraftSection.PURPOSE, DraftSection.ONGOING_TASKS, DraftSection.RECURRING_TASKS)),
 	PROCEDURE("실행 절차", List.of(DraftSection.RECURRING_TASKS, DraftSection.ONGOING_TASKS,
+			DraftSection.FIRST_WEEK_CHECKLIST)),
+	PROGRESS("진행 현황", List.of(DraftSection.ONGOING_TASKS, DraftSection.RECURRING_TASKS)),
+	PRIORITY("우선순위", List.of(DraftSection.ONGOING_TASKS, DraftSection.RECURRING_TASKS,
 			DraftSection.FIRST_WEEK_CHECKLIST)),
 	COMPLETION("완료 기준", List.of(DraftSection.COMPLETION_CRITERIA)),
 	EXCEPTION("예외 대응", List.of(DraftSection.RULES_AND_EXCEPTIONS, DraftSection.CONFIRMED_CRITERIA)),

@@ -43,9 +43,64 @@ public final class ReadinessRubrics {
 	public static final ReadinessRubric V2 = new ReadinessRubric(
 			"v2", V1.criteria(), V1.weights(), V1.statusPercent(), V1.readyScore(), V1.minimumScore(), V1.keyIssueCount());
 
-	public static final ReadinessRubric CURRENT = V2;
+	/**
+	 * v3: 접근 권한·근거와 최신성 영역을 뺐다. 인계자가 문서만으로 채우기 어렵고(계정·권한은 보안상 적지 않는 경우가 많고,
+	 * 자료의 최신성은 문서를 고쳐서 올릴 수 있는 점수가 아니다) 점수만 깎는 항목이었다. 남은 여섯 영역에 20점을 나눠 실었다.
+	 * 자료끼리 어긋나는 값은 각 영역의 CONFLICT(충돌) 상태로 계속 잡는다. 상태 비율·등급 경계·평가 방식은 v2와 같다.
+	 */
+	public static final ReadinessRubric V3 = new ReadinessRubric(
+			"v3",
+			Map.of(
+					ReadinessArea.SCOPE, V1.criteria().get(ReadinessArea.SCOPE),
+					ReadinessArea.PROCEDURE, V1.criteria().get(ReadinessArea.PROCEDURE),
+					ReadinessArea.COMPLETION, V1.criteria().get(ReadinessArea.COMPLETION),
+					ReadinessArea.EXCEPTION, V1.criteria().get(ReadinessArea.EXCEPTION),
+					ReadinessArea.SCHEDULE, V1.criteria().get(ReadinessArea.SCHEDULE),
+					ReadinessArea.CONTACTS, V1.criteria().get(ReadinessArea.CONTACTS)),
+			Map.of(
+					ReadinessArea.SCOPE, 15,
+					ReadinessArea.PROCEDURE, 25,
+					ReadinessArea.COMPLETION, 15,
+					ReadinessArea.EXCEPTION, 15,
+					ReadinessArea.SCHEDULE, 15,
+					ReadinessArea.CONTACTS, 15),
+			V1.statusPercent(), V1.readyScore(), V1.minimumScore(), V1.keyIssueCount());
 
-	private static final Map<String, ReadinessRubric> BY_VERSION = Map.of(V1.version(), V1, V2.version(), V2);
+	/**
+	 * v4: 진행 현황·우선순위 영역을 더했다. 둘 다 인계자만 알지만 질문 한두 개로 바로 채울 수 있고, 후임자가 가장 먼저 되묻는 내용이다.
+	 * - 진행 현황: 절차는 잘 적혀 있어도 "지금 어디까지 했는지"가 없으면 이어받을 수 없다. 진행 중 업무가 없으면 반복 업무로 판단한다.
+	 * - 우선순위: 업무 하나하나가 아니라 업무들 사이의 경중. 기존 영역 어디에서도 보지 않던 것.
+	 * 담당자에는 인계 후 전임자에게 물어볼 수 있는 기간·방법을 더했다. 상태 비율·등급 경계·평가 방식은 v3과 같다.
+	 */
+	public static final ReadinessRubric V4 = new ReadinessRubric(
+			"v4",
+			Map.of(
+					ReadinessArea.SCOPE, V1.criteria().get(ReadinessArea.SCOPE),
+					ReadinessArea.PROCEDURE, V1.criteria().get(ReadinessArea.PROCEDURE),
+					ReadinessArea.PROGRESS, "진행 중인 업무를 바로 이어받을 수 있는가 (업무별로 지금 어디까지 했는지, 다음에 할 일, 기다리고 있는 승인·회신)."
+							+ " 진행 중 업무가 없고 반복 업무만 있으면 반복 업무의 현재 상태와 다음 할 일로 판단한다",
+					ReadinessArea.PRIORITY, "무엇부터 챙겨야 하는지 알 수 있는가 (가장 중요하거나 밀리면 안 되는 업무, 바쁠 때 먼저 할 일과 미뤄도 되는 일)."
+							+ " 업무가 하나뿐이면 그 업무에서 놓치면 안 되는 부분이 적혀 있는지로 판단한다",
+					ReadinessArea.COMPLETION, V1.criteria().get(ReadinessArea.COMPLETION),
+					ReadinessArea.EXCEPTION, V1.criteria().get(ReadinessArea.EXCEPTION),
+					ReadinessArea.SCHEDULE, V1.criteria().get(ReadinessArea.SCHEDULE),
+					ReadinessArea.CONTACTS, "문의·승인·보고 대상이 명확한가 (누구에게 묻고, 누가 승인하고, 누구에게 보고하는지,"
+							+ " 인계 후 전임자에게 언제까지 어떤 방법으로 물어볼 수 있는지)"),
+			Map.of(
+					ReadinessArea.SCOPE, 10,
+					ReadinessArea.PROCEDURE, 20,
+					ReadinessArea.PROGRESS, 15,
+					ReadinessArea.PRIORITY, 10,
+					ReadinessArea.COMPLETION, 10,
+					ReadinessArea.EXCEPTION, 15,
+					ReadinessArea.SCHEDULE, 10,
+					ReadinessArea.CONTACTS, 10),
+			V1.statusPercent(), V1.readyScore(), V1.minimumScore(), V1.keyIssueCount());
+
+	public static final ReadinessRubric CURRENT = V4;
+
+	private static final Map<String, ReadinessRubric> BY_VERSION = Map.of(
+			V1.version(), V1, V2.version(), V2, V3.version(), V3, V4.version(), V4);
 
 	private ReadinessRubrics() {
 	}

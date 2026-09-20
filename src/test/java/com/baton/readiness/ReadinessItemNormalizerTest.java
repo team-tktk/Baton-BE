@@ -77,6 +77,19 @@ class ReadinessItemNormalizerTest {
 	}
 
 	@Test
+	void progressIsJudgedOnRecurringTasksWhenThereAreNoOngoingTasks() {
+		GeneratedAreaAssessment generated = new GeneratedAreaAssessment(ReadinessArea.PROGRESS, ReadinessStatus.SUFFICIENT,
+				List.of(DraftSection.RECURRING_TASKS), "", "반복 업무의 상태와 다음 할 일이 적혀 있어요", "", List.of(), List.of());
+
+		ReadinessItem progress = find(normalizer.normalize(new GeneratedAssessment(List.of(generated)), CONTENT, SOURCES,
+				ReadinessRubrics.CURRENT.areas()), ReadinessArea.PROGRESS);
+
+		// 진행 중 업무가 비어 있어도 반복 업무가 있으면 서버가 누락으로 덮어쓰지 않는다.
+		assertThat(progress.status()).isEqualTo(ReadinessStatus.SUFFICIENT);
+		assertThat(progress.section()).isEqualTo(DraftSection.RECURRING_TASKS);
+	}
+
+	@Test
 	void areaOmittedByAiWithContentBecomesPartial() {
 		ReadinessItem exception = find(normalizer.normalize(new GeneratedAssessment(List.of()), CONTENT, SOURCES),
 				ReadinessArea.EXCEPTION);
