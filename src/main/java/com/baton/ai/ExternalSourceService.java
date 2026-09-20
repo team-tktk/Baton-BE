@@ -27,6 +27,7 @@ public class ExternalSourceService {
 	private final SafeWebSourceFetcher webFetcher;
 	private final MaskingCandidateRepository maskingCandidateRepository;
 	private final LargeObjectCleaner largeObjectCleaner;
+	private final RagSourceVersionService versionService;
 
 	public Result createWeb(UUID handoverId, CreateWebLinkRequest request) {
 		FetchResult fetched = webFetcher.fetch(request.url());
@@ -65,6 +66,7 @@ public class ExternalSourceService {
 				throw new BusinessException(ErrorCode.AI_EXTERNAL_SOURCE_FETCH_FAILED,
 						"로그인이 필요한 링크는 설명을 입력해야 저장할 수 있습니다.");
 			}
+			versionService.archive(source);
 			ragIngestService.deleteIndex(source);
 			persistence.updateExternal(sourceId, title, description, fetched.finalUrl(), null, null);
 			if (request.enabled() != null) persistence.setEnabled(sourceId, request.enabled());
@@ -76,6 +78,7 @@ public class ExternalSourceService {
 		}
 		String url = firstNonBlank(request.url(), source.getOriginalUrl());
 		validateSlackUrl(url);
+		versionService.archive(source);
 		ragIngestService.deleteIndex(source);
 		persistence.updateExternal(sourceId, firstNonBlank(request.title(), source.getFileName()),
 				source.getDescription(), url, firstNonBlank(request.conversationName(), source.getConversationName()),
@@ -126,6 +129,7 @@ public class ExternalSourceService {
 		if (source.getStatus() == SourceDocumentStatus.EXTRACTING || source.getStatus() == SourceDocumentStatus.INDEXING) {
 			throw new BusinessException(ErrorCode.AI_SOURCE_DOCUMENT_PROCESSING);
 		}
+		versionService.archive(source);
 		ragIngestService.deleteIndex(source);
 		maskingCandidateRepository.deleteAllBySourceDocumentId(sourceId);
 		Long oid = largeObjectCleaner.extractedTextOid(sourceId);

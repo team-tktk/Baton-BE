@@ -38,6 +38,7 @@ import com.baton.ai.dto.ChatMessageResponse;
 import com.baton.ai.dto.HandoverBriefingResponse;
 import com.baton.ai.dto.HandoverDraftResponse;
 import com.baton.ai.dto.QuestionAnswerRequest;
+import com.baton.ai.dto.RagSourceVersionResponse;
 import com.baton.ai.dto.UpdateDraftRequest;
 import com.baton.ai.dto.SourceDetailResponse;
 import com.baton.ai.dto.SourceEvidenceResponse;
@@ -95,6 +96,7 @@ public class RagController {
 	private final AiUsageGuard aiUsageGuard;
 	private final AiTaskLockService aiTaskLockService;
 	private final HandoverAccess handoverAccess;
+	private final RagSourceVersionService ragSourceVersionService;
 
 	@Operation(summary = "인수인계 파일 업로드",
 			description = """
@@ -629,6 +631,19 @@ public class RagController {
 		return ragIngestService.listAllSources(handoverId).stream()
 				.map(source -> SourceEvidenceResponse.from(handoverId, source))
 				.toList();
+	}
+
+	@Operation(summary = "RAG 자료 이전 버전 조회",
+			description = "수정·삭제 전에 보관된 자료·초안·확인 답변의 이전 버전이다. 현재 RAG 검색에는 포함되지 않는다. 인계자만 가능하며 페이지당 최대 20건을 반환한다.")
+	@GetMapping("/source-versions")
+	public List<RagSourceVersionResponse> getSourceVersions(
+			@PathVariable UUID handoverId,
+			@RequestParam(required = false) UUID sourceId,
+			@RequestParam(defaultValue = "0") int page,
+			@RequestParam(defaultValue = "20") int size,
+			Authentication authentication) {
+		handoverAccess.requireOwner(handoverId, authentication);
+		return ragSourceVersionService.list(handoverId, sourceId, page, size);
 	}
 
 	private Handover loadHandover(UUID handoverId) {

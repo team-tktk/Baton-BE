@@ -51,6 +51,8 @@ class RagIngestServiceQuotaTest {
 	private MaskingCandidateRepository maskingCandidateRepository;
 	@Mock
 	private LargeObjectCleaner largeObjectCleaner;
+	@Mock
+	private RagSourceVersionService versionService;
 
 	private RagIngestService service;
 	private UUID handoverId;
@@ -60,7 +62,7 @@ class RagIngestServiceQuotaTest {
 	void setUp() {
 		service = new RagIngestService(sourceDocumentRepository, sourceDocumentPersistence,
 				vectorStore, tokenTextSplitter, s3FileStorage, entityManager, fileSignatureValidator, handoverRepository,
-				new MaskingDetector(), maskingCandidateRepository, largeObjectCleaner);
+				new MaskingDetector(), maskingCandidateRepository, largeObjectCleaner, versionService);
 		ReflectionTestUtils.setField(service, "maxFilesPerHandover", 30);
 		ReflectionTestUtils.setField(service, "maxTotalSizePerHandoverMb", 300L);
 		ReflectionTestUtils.setField(service, "maxTotalSizePerAccountMb", 1024L);

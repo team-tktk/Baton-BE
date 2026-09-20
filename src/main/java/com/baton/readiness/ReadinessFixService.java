@@ -31,6 +31,7 @@ import com.baton.ai.ClarificationQuestionStatus;
 import com.baton.ai.DraftSection;
 import com.baton.ai.HandoverDraft;
 import com.baton.ai.HandoverDraftRepository;
+import com.baton.ai.RagSourceVersionService;
 import com.baton.ai.SourceDocument;
 import com.baton.ai.SourceDocumentRepository;
 import com.baton.ai.dto.HandoverDraftContent;
@@ -78,6 +79,7 @@ public class ReadinessFixService {
 	private final VectorStore vectorStore;
 	private final ChatClient chatClient;
 	private final TransactionTemplate transactionTemplate;
+	private final RagSourceVersionService versionService;
 
 	@Value("${app.ai.analysis-model:gpt-5.4}")
 	private String analysisModel;
@@ -216,6 +218,7 @@ public class ReadinessFixService {
 			requireNotStale(fix, draft.getRevision());
 
 			List<DraftSection> sections = fix.proposedSections();
+			versionService.archive(draft);
 			draft.replaceContent(DraftSection.merge(draft.getContent(), fix.getAfter(), sections));
 			fix.markApplied(draft.getRevision());
 			resolveDeferredQuestions(fix);
